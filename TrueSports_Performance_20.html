@@ -1,0 +1,1552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRUE SPORTS — Performance Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#070b14;--card:#0d1320;--card-border:#1a2540;--card-hover:#111b30;
+  --blue:#3b82f6;--blue-dim:#1e3a6e;--cyan:#22d3ee;--gold:#f59e0b;--gold-dim:#78500a;
+  --silver:#94a3b8;--bronze:#d97706;--green:#10b981;--red:#ef4444;--amber:#f59e0b;
+  --text:#e2e8f0;--text-dim:#64748b;--text-muted:#475569;
+  --glow:0 0 20px rgba(59,130,246,0.15);
+}
+body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+.mono{font-family:'JetBrains Mono',monospace}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+@keyframes slideRight{from{width:0}to{width:var(--w)}}
+@keyframes gaugeAnim{from{stroke-dashoffset:var(--circ)}to{stroke-dashoffset:var(--offset)}}
+@keyframes glow{0%,100%{box-shadow:0 0 5px rgba(59,130,246,0.2)}50%{box-shadow:0 0 20px rgba(59,130,246,0.4)}}
+.fade-up{animation:fadeUp .4s ease-out both}
+.card{background:var(--card);border:1px solid var(--card-border);border-radius:14px;overflow:hidden;transition:border-color .2s}
+.card:hover{border-color:#2a3a5a}
+.card-head{padding:16px 20px 12px;border-bottom:1px solid var(--card-border)}
+.card-body{padding:14px 20px 18px}
+.card-title{font-size:13px;font-weight:700;color:var(--text);letter-spacing:.3px}
+.card-sub{font-size:10px;color:var(--text-dim);margin-top:2px;letter-spacing:.5px;text-transform:uppercase}
+.glow-border{animation:glow 3s ease-in-out infinite}
+button{font-family:inherit;cursor:pointer;border:none;outline:none}
+canvas{max-width:100%!important}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--card-border);border-radius:3px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="error-display" style="display:none;background:#1a0000;color:#ff6666;padding:20px;margin:20px;border-radius:8px;font-family:monospace;font-size:13px;white-space:pre-wrap;border:1px solid #ff3333"></div>
+<script>
+window.onerror=function(msg,src,line,col,err){
+  var el=document.getElementById('error-display');
+  el.style.display='block';
+  el.textContent='ERROR: '+msg+'\nLine: '+line+' Col: '+col+'\n'+(err&&err.stack?err.stack:'');
+  return false;
+};
+</script>
+<script>
+window.onerror=function(msg,url,line,col,err){
+  document.body.innerHTML='<div style="color:red;padding:20px;font-family:monospace"><h2>Script Error</h2><p>'+msg+'</p><p>Line: '+line+' Col: '+col+'</p><pre>'+(err&&err.stack||'')+'</pre></div>';
+  return true;
+};
+</script>
+<script type="text/babel">
+const {useState,useMemo,useCallback,useRef,useEffect} = React;
+
+/* ══════════════════════════════════════════════════════════════════
+   WORK HORSE CONFIG — Edit this section before each deploy
+   ══════════════════════════════════════════════════════════════════ */
+const WORKHORSE = {
+  month: "March 2026",
+  name: "To Be Announced",
+  title: "Work Horse of the Month",
+  blurb: "Recognition of a Rep that went above and beyond for the company and their customers. Selection by committee.",
+  hallOfFame: [
+    // { month: "February 2026", name: "Rep Name", note: "Short reason" },
+  ]
+};
+
+/* ══════════════════════════════════════════════════════════════════
+   LOCKED BUDGET DATA
+   ══════════════════════════════════════════════════════════════════ */
+const FX=1.3699;
+const CA_REPS=new Set(["Key Accounts Canada","Marc-Andre Bellehumeur","Scott Sissions","Brent Hobday","JEFF LYNCH","Brad Savelson","Mario Richard","WES HUETHER","Greg Pettis","Mario Therrien","Adam Berkhoel","Dave Campbell","SCOTT WALKER"]);
+const isCA=r=>CA_REPS.has(r)||r.includes("Canada");
+const REP_BUDGETS={"Brad Savelson":{c:"CA",f:1734334.0},"Brent Hobday":{c:"CA",f:1168073.0},"Greg Pettis":{c:"CA",f:1003929.5},"JEFF LYNCH":{c:"CA",f:1236510.5},"Key Accounts Canada":{c:"CA",f:5510478.0},"Marc-Andre Bellehumeur":{c:"CA",f:2307405.5},"Mario Richard":{c:"CA",f:1795191.18},"Mario Therrien":{c:"CA",f:750000.0},"Scott Sissions":{c:"CA",f:1516940.0},"WES HUETHER":{c:"CA",f:809752.5},"Adam Berkhoel":{c:"CA",f:750000.0},"Dave Campbell":{c:"CA",f:750000.0},"Jesse Nifong (Hockey)":{c:"US",f:218738.09},"Jon Nassoura":{c:"US",f:1000000.0},"Key Accounts US":{c:"US",f:9049259.0},"Lucas Gore":{c:"US",f:1000000.0},"MITCHELL WALKER":{c:"US",f:1000000.0},"Matt Shaw":{c:"US",f:1742900.0},"SCOTT WALKER":{c:"CA",f:750000.0},"Steve Boersma":{c:"US",f:1526577.0},"VINCENT PIZZO":{c:"US",f:309118.55},"Zac Lampson":{c:"US",f:1805680.19},"Andreas Lindqvist":{c:"EU",f:830200.0},"Andrew McPherson":{c:"EU",f:830200.0},"Andris Stepins":{c:"EU",f:830200.0},"Filippo Dal Ben":{c:"EU",f:830200.0},"Jonathan Weaver":{c:"EU",f:830200.0},"PETTERI LINNONMAA":{c:"EU",f:830200.0},"PHILIPPE BOUDREAULT MCNICOLL":{c:"EU",f:830200.0},ProjektS:{c:"EU",f:830200.0},"Tilen Smolnikar":{c:"EU",f:830200.0},"NO SALES CREDIT -DTC US":{c:"US",f:1145600.0},"NO SALES CREDIT -DTC CAN":{c:"CA",f:1109434.15},ROW:{c:"ROW",f:1000000.0}};
+const CAT_BUDGETS={"Brad Savelson":{Sticks:639115.0,"Custom Skates":173740.0,"Stock Skates":250400.95,"Custom Goalie":261705.0,"Stock Goalie":277400.0,Other:131973.05},"Brent Hobday":{Sticks:473405.0,"Custom Skates":85045.0,"Stock Skates":199655.0,"Custom Goalie":98550.0,"Stock Goalie":159870.0,Other:151548.0},"Greg Pettis":{Sticks:495760.0,"Custom Skates":57669.5,"Stock Skates":152460.0,"Custom Goalie":40880.0,"Stock Goalie":108390.0,Other:148770.0},"JEFF LYNCH":{Sticks:368650.0,"Custom Skates":97309.0,"Stock Skates":182500.0,"Custom Goalie":231775.0,"Stock Goalie":260245.0,Other:96031.5},"Key Accounts Canada":{Sticks:3538018.0,"Custom Skates":213525.0,"Stock Skates":335800.0,"Custom Goalie":43800.0,"Stock Goalie":551150.0,Other:828185.0},"Marc-Andre Bellehumeur":{Sticks:813762.5,"Custom Skates":85629.0,"Stock Skates":587285.0,"Custom Goalie":176660.0,"Stock Goalie":370830.0,Other:273239.0},"Mario Richard":{Sticks:728905.0,"Custom Skates":140160.0,"Stock Skates":370219.5,"Custom Goalie":116800.0,"Stock Goalie":251448.5,Other:187658.18},"Mario Therrien":{Sticks:50000.0,"Custom Skates":200000.0,"Stock Skates":0,"Custom Goalie":500000.0,"Stock Goalie":0,Other:0},"Scott Sissions":{Sticks:398653.0,"Custom Skates":191771.0,"Stock Skates":253857.5,"Custom Goalie":332880.0,"Stock Goalie":210970.0,Other:128808.5},"WES HUETHER":{Sticks:356605.0,"Custom Skates":58035.0,"Stock Skates":146000.0,"Custom Goalie":62050.0,"Stock Goalie":107675.0,Other:79387.5},"Adam Berkhoel":{Sticks:50000.0,"Custom Skates":200000.0,"Stock Skates":0,"Custom Goalie":500000.0,"Stock Goalie":0,Other:0},"Dave Campbell":{Sticks:50000.0,"Custom Skates":200000.0,"Stock Skates":0,"Custom Goalie":500000.0,"Stock Goalie":0,Other:0},"Jesse Nifong (Hockey)":{Sticks:67112.61,"Custom Skates":3650.0,"Stock Skates":96467.0,"Custom Goalie":0,"Stock Goalie":12298.05,Other:39210.11},"Jon Nassoura":{Sticks:100000.0,"Custom Skates":300000.0,"Stock Skates":0,"Custom Goalie":600000.0,"Stock Goalie":0,Other:0},"Key Accounts US":{Sticks:4696311.52,"Custom Skates":1363176.34,"Stock Skates":207951.2,"Custom Goalie":846652.9,"Stock Goalie":1383843.8,Other:551323.24},"Lucas Gore":{Sticks:100000.0,"Custom Skates":300000.0,"Stock Skates":0,"Custom Goalie":600000.0,"Stock Goalie":0,Other:0},"MITCHELL WALKER":{Sticks:50000.0,"Custom Skates":200000.0,"Stock Skates":0,"Custom Goalie":500000.0,"Stock Goalie":0,Other:0},"Matt Shaw":{Sticks:658800.0,"Custom Skates":197250.0,"Stock Skates":207700.0,"Custom Goalie":274400.0,"Stock Goalie":134900.0,Other:269850.0},"SCOTT WALKER":{Sticks:100000.0,"Custom Skates":300000.0,"Stock Skates":0,"Custom Goalie":600000.0,"Stock Goalie":0,Other:0},"Steve Boersma":{Sticks:586500.0,"Custom Skates":189020.0,"Stock Skates":274532.0,"Custom Goalie":136500.0,"Stock Goalie":114850.0,Other:225175.0},"VINCENT PIZZO":{Sticks:88599.63,"Custom Skates":15555.0,"Stock Skates":4619.0,"Custom Goalie":49602.0,"Stock Goalie":137829.3,Other:12913.84},"Zac Lampson":{Sticks:458377.01,"Custom Skates":257000.0,"Stock Skates":673233.05,"Custom Goalie":61500.0,"Stock Goalie":84000.0,Other:271570.13},"Andreas Lindqvist":{Sticks:155662.5,"Custom Skates":103775.0,"Stock Skates":155662.5,"Custom Goalie":103775.0,"Stock Goalie":155662.5,Other:155662.5},"Andrew McPherson":{Sticks:155662.5,"Custom Skates":103775.0,"Stock Skates":155662.5,"Custom Goalie":103775.0,"Stock Goalie":155662.5,Other:155662.5},"Andris Stepins":{Sticks:155662.5,"Custom Skates":103775.0,"Stock Skates":155662.5,"Custom Goalie":103775.0,"Stock Goalie":155662.5,Other:155662.5},"Filippo Dal Ben":{Sticks:155662.5,"Custom Skates":103775.0,"Stock Skates":155662.5,"Custom Goalie":103775.0,"Stock Goalie":155662.5,Other:155662.5},"Jonathan Weaver":{Sticks:155662.5,"Custom Skates":103775.0,"Stock Skates":155662.5,"Custom Goalie":103775.0,"Stock Goalie":155662.5,Other:155662.5},"PETTERI LINNONMAA":{Sticks:155662.5,"Custom Skates":103775.0,"Stock Skates":155662.5,"Custom Goalie":103775.0,"Stock Goalie":155662.5,Other:155662.5},"PHILIPPE BOUDREAULT MCNICOLL":{Sticks:155662.5,"Custom Skates":103775.0,"Stock Skates":155662.5,"Custom Goalie":103775.0,"Stock Goalie":155662.5,Other:155662.5},ProjektS:{Sticks:155662.5,"Custom Skates":103775.0,"Stock Skates":155662.5,"Custom Goalie":103775.0,"Stock Goalie":155662.5,Other:155662.5},"Tilen Smolnikar":{Sticks:155662.5,"Custom Skates":103775.0,"Stock Skates":155662.5,"Custom Goalie":103775.0,"Stock Goalie":155662.5,Other:155662.5},"NO SALES CREDIT -DTC US":{Sticks:143200.0,"Custom Skates":143200.0,"Stock Skates":143200.0,"Custom Goalie":143200.0,"Stock Goalie":143200.0,Other:429600.0},"NO SALES CREDIT -DTC CAN":{Sticks:138679.27,"Custom Skates":138679.27,"Stock Skates":138679.27,"Custom Goalie":138679.27,"Stock Goalie":138679.27,Other:416037.81},ROW:{Sticks:125000.0,"Custom Skates":125000.0,"Stock Skates":125000.0,"Custom Goalie":125000.0,"Stock Goalie":125000.0,Other:375000.0}};
+
+/* ══════════════════════════════════════════════════════════════════
+   CHANNEL / CATEGORY MAPPING
+   ══════════════════════════════════════════════════════════════════ */
+const KA=["SPORT CHEK","PRO HOCKEY LIFE","PURE HOCKEY","PERANIS","MONKEY","PIAS","IN HOUSE"];
+const SP=["FGL","SOURCE FOR SPORTS","SPORTS EXCELLENCE","INDEPENDENTS","HOCKEY HOUND","SPORTS AUX PUCES"];
+const EL=["PRO TEAM","PRO AGENCY"];const OT=["REPS CANADA","REPS USA","DISTRIBUTORS NA"];
+const ELITE_REPS=new Set(["Adam Berkhoel","Lucas Gore","Dave Campbell","Jon Nassoura","MITCHELL WALKER","SCOTT WALKER","Steve Boersma","SCOTT BROWN"]);
+const EU_SUB={
+  "Nordics":["Andreas Lindqvist","PETTERI LINNONMAA"],
+  "Western/Southern":["Andrew McPherson","Jonathan Weaver","Filippo Dal Ben","PHILIPPE BOUDREAULT MCNICOLL"],
+  "Central/Eastern":["Andris Stepins","Tilen Smolnikar","ProjektS"],
+  "ROW":["Key Accounts Other","DAVE MCNALLY"]
+};
+const getEUSub=(rep)=>{for(const[k,v]of Object.entries(EU_SUB)){if(v.includes(rep))return k}return"ROW"};
+const EU_SUB_COLORS={"Nordics":"#3b82f6","Western/Southern":"#22d3ee","Central/Eastern":"#8b5cf6","ROW":"#f59e0b"};
+const EB4=["HOCKEY BASE","INTERHOCKEY","JAGR TEAM","SPOBIK"];
+const ET10=["ELBE HOCKEY","L-SPORTING","FABRIQEN","SPORTER","SIA HOKEJAM","HPS SPORT","TOP ON ICE","ECO BEAUTY","JEGVILAG","LLP DLYA"];
+const ma=(s,l)=>{const u=s.toUpperCase();return l.some(n=>u.includes(n.toUpperCase()))};
+const getCh=(cr,dtc,reg,terr,rep)=>{const u=cr.toUpperCase();if(u.includes("TRUE ATHLETE"))return"Elite/Pro";if(u.includes("TRUE HOCKEY"))return"Elite/Pro";if(rep==="NO SALES CREDIT")return"Other";if(dtc)return"DTC";if(ma(cr,KA))return"Key Accounts";if(ma(cr,EL))return"Elite/Pro";if(ELITE_REPS.has(rep))return"Elite/Pro";if(u.includes("INTERNATIONAL RETAIL"))return"Specialty";if(terr==="U.S.-PS")return"Other";if(ma(cr,OT))return"Other";if(ma(cr,SP))return"Specialty";if(reg==="CAN"||reg==="USA")return"Specialty";return"EU"};
+const getEU=(cr)=>{if(ma(cr,EB4))return"KA - Big 4";if(ma(cr,ET10))return"KA - Top 10";return"Others"};
+const getCat=(pt)=>{if(!pt)return"Other";const u=pt.toUpperCase();if(u==="STICKS")return"Sticks";if(u==="SKATES - CUSTOM")return"Custom Skates";if(u.includes("SKATES"))return"Stock Skates";if(u==="GOALIE - CUSTOM")return"Custom Goalie";if(u==="GOALIE - STOCK")return"Stock Goalie";return"Other"};
+const REP_REASSIGN={"Corey Gregory":"DAVE MCNALLY","Steve Sutherland":"DAVE MCNALLY","RICH VANBELLINGER":"Dave Campbell"};
+const getDR=(r,reg)=>{r=REP_REASSIGN[r]||r;if(r==="IN HOUSE"){if(reg==="CAN")return"Key Accounts Canada";if(reg==="USA")return"Key Accounts US";return"Key Accounts Other"}return r};
+
+/* ══════════════════════════════════════════════════════════════════
+   AGGREGATION PIPELINE
+   ══════════════════════════════════════════════════════════════════ */
+function aggregate(rows){
+  let maxDate=null;rows.forEach(r=>{if(r.od&&(!maxDate||r.od>maxDate))maxDate=r.od});
+  let we=maxDate?new Date(maxDate):new Date();const dow=we.getDay();we.setDate(we.getDate()-(dow===6?0:dow+1));
+  const ws=new Date(we);ws.setDate(ws.getDate()-6);
+  const rBud={CAN:21192048.33,USA:18797872.83,"Europe/ROW":8471800,DTC:0};
+  const rBudGlobal=rBud.CAN+rBud.USA+rBud["Europe/ROW"]+rBud.DTC;
+  const d1={},d2={},d2ka={},d2sp={},d3={},d4={},d5={},d6={},d7={};
+  const mNA={},mEU={},wTrend={};
+
+  rows.forEach(r=>{
+    const dtc=r.ot.toUpperCase().includes("DTC")&&!r.cr.toUpperCase().includes("TRUE ATHLETE");
+    const aR=r.cr.toUpperCase().includes("INTERNATIONAL RETAIL")?"Europe/ROW":(r.reg==="CAN"?"CAN":r.reg==="USA"?"USA":"Europe/ROW");
+    const ch=getCh(r.cr,dtc,r.reg,r.terr||"",r.rep);const eu=getEU(r.cr);const cat=getCat(r.pt);const dr=getDR(r.rep,r.reg);
+    const isSh=r.of==="Shipped Only",isOp=r.of==="Open Only";
+    let isRec=false;if(r.od){isRec=r.od>=ws&&r.od<=new Date(we.getTime()+7*864e5)}
+    let mk=null,wk=null;
+    if(r.od){mk=r.od.toISOString().slice(0,7);const iso=getISOWeek(r.od);wk=`${iso[0]}-W${String(iso[1]).padStart(2,'0')}`}
+
+    if(!d1[aR])d1[aR]={s:0,o:0};if(isSh)d1[aR].s+=r.rev;if(isOp)d1[aR].o+=r.rev;
+    if(["CAN","USA","DTC"].includes(aR)&&ch!=="EU"){
+      if(!d2[ch])d2[ch]={s:0,o:0};if(isSh)d2[ch].s+=r.rev;if(isOp)d2[ch].o+=r.rev;
+      const cn=r.cr.split("-")[0].trim();if(ch==="Key Accounts")d2ka[cn]=(d2ka[cn]||0)+r.rev;if(ch==="Specialty")d2sp[cn]=(d2sp[cn]||0)+r.rev;
+    }
+    if(aR==="Europe/ROW"){if(!d3[eu])d3[eu]={s:0,o:0};if(isSh)d3[eu].s+=r.rev;if(isOp)d3[eu].o+=r.rev}
+    if(["CAN","USA","DTC"].includes(aR)&&dr!=="NO SALES CREDIT"){
+      if(!d4[dr])d4[dr]={t:0,w:0};d4[dr].t+=r.rev;if(isRec)d4[dr].w+=r.rev;
+      if(mk){if(!mNA[mk])mNA[mk]={};mNA[mk][dr]=(mNA[mk][dr]||0)+r.rev}
+      if(wk){if(!wTrend[wk])wTrend[wk]={na:0,eu:0};wTrend[wk].na+=r.rev}
+    }
+    if(["CAN","USA","DTC"].includes(aR)&&["Sticks","Custom Skates","Stock Skates","Custom Goalie","Stock Goalie","Other"].includes(cat)&&dr!=="NO SALES CREDIT"){
+      if(!d5[cat])d5[cat]={};d5[cat][dr]=(d5[cat][dr]||0)+r.rev;
+    }
+    if(aR==="Europe/ROW"&&dr!=="NO SALES CREDIT"){
+      if(!d6[dr])d6[dr]={t:0,w:0};d6[dr].t+=r.rev;if(isRec)d6[dr].w+=r.rev;
+      if(mk){if(!mEU[mk])mEU[mk]={};mEU[mk][dr]=(mEU[mk][dr]||0)+r.rev}
+      if(wk){if(!wTrend[wk])wTrend[wk]={na:0,eu:0};wTrend[wk].eu+=r.rev}
+    }
+    if(aR==="Europe/ROW"&&["Sticks","Custom Skates","Stock Skates","Custom Goalie","Stock Goalie","Other"].includes(cat)&&dr!=="NO SALES CREDIT"){
+      if(!d7[cat])d7[cat]={};d7[cat][dr]=(d7[cat][dr]||0)+r.rev;
+    }
+  });
+
+  const d1O=[];for(const reg of["CAN","USA","Europe/ROW","DTC"]){const v=d1[reg]||{s:0,o:0};const t=v.s+v.o;const b=rBud[reg]||0;d1O.push({region:reg,shipped:v.s,open:v.o,total:t,budget:b,pct:b>0?Math.round(t/b*1000)/10:null})}
+  const gs=d1O.reduce((s,r)=>s+r.shipped,0),go=d1O.reduce((s,r)=>s+r.open,0),gt=gs+go,gb=rBudGlobal;
+  d1O.push({region:"GLOBAL",shipped:gs,open:go,total:gt,budget:gb,pct:gb>0?Math.round(gt/gb*1000)/10:null});
+  const d2O=["Key Accounts","Specialty","Elite/Pro","DTC","Other"].map(c=>{const v=d2[c]||{s:0,o:0};return{channel:c,shipped:v.s,open:v.o,total:v.s+v.o}}).filter(c=>c.total>0);
+  const d2D={ka:Object.entries(d2ka).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([n,t])=>({name:n,total:t})),sp:Object.entries(d2sp).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([n,t])=>({name:n,total:t}))};
+  const d3O=["KA - Big 4","KA - Top 10","Others"].map(tier=>{const v=d3[tier]||{s:0,o:0};return{tier,shipped:v.s,open:v.o,total:v.s+v.o}}).filter(t=>t.total>0);
+  const fR=d=>Object.entries(d).map(([rep,v])=>{const b=(REP_BUDGETS[rep]||{}).f||0;return{rep,total:v.t,pct:b>0?Math.round(v.t/b*1000)/10:null,weekly:v.w,hb:b>0,budget:b,ca:isCA(rep)}});
+  const fC=d=>{const o={};for(const cat of["Sticks","Custom Skates","Stock Skates","Custom Goalie","Stock Goalie","Other"]){const e=Object.entries(d[cat]||{}).sort((a,b)=>b[1]-a[1]).slice(0,10);o[cat]=e.map(([rep,total])=>{const cb=(CAT_BUDGETS[rep]||{})[cat]||0;return{rep,total,cb,pct:cb>0?Math.round(total/cb*1000)/10:null,ca:isCA(rep)}})}return o};
+
+  const fM=d=>{const o={};for(const m of Object.keys(d).sort()){o[m]=Object.entries(d[m]).sort((a,b)=>b[1]-a[1]).slice(0,20).map(([rep,total])=>({rep,total:Math.round(total*100)/100}))}return o};
+  const wks=Object.keys(wTrend).sort().slice(-12);
+  const wT=wks.map(w=>({week:w,na:Math.round(wTrend[w].na*100)/100,eu:Math.round(wTrend[w].eu*100)/100}));
+  const cM=[];for(const cat of["Sticks","Custom Skates","Stock Skates","Custom Goalie","Stock Goalie","Other"]){let t=0;if(d5[cat])for(const v of Object.values(d5[cat]))t+=v;cM.push({category:cat,total:Math.round(t*100)/100})}
+  cM.sort((a,b)=>b.total-a.total);
+
+  return{as_of_date:maxDate?maxDate.toISOString().slice(0,10):"Unknown",d1:d1O,d2:d2O,d2_drill:d2D,d3:d3O,d4:fR(d4),d5:fC(d5),d6:fR(d6),d7:fC(d7),monthly_na:fM(mNA),monthly_eu:fM(mEU),weekly_trend:wT,category_mix:cM};
+}
+
+function getISOWeek(d){const t=new Date(d);t.setHours(0,0,0,0);t.setDate(t.getDate()+3-(t.getDay()+6)%7);const w1=new Date(t.getFullYear(),0,4);return[t.getFullYear(),1+Math.round(((t-w1)/864e5-3+(w1.getDay()+6)%7)/7)]}
+
+function parseCSV(text){const r=Papa.parse(text,{header:true,skipEmptyLines:true});const rows=[];let sk=0;
+  r.data.forEach(row=>{const rep=(row.SALESREP_NAME||"").trim();const reg=(row.REGION||"").trim();if(!rep||!reg){sk++;return}
+  const py=parseInt(row.PERIOD_YEAR);if(py&&py!==2026){sk++;return}let od=null;if(row.ORDERED_DATE){const d=new Date(row.ORDERED_DATE);if(!isNaN(d))od=d}
+  rows.push({rep,reg,pt:(row.PRODUCT_TYPE||"").trim(),cr:(row.CUSTOMER_ROLLUP_NAME||"").trim(),ot:(row.ORDER_TYPE||"").trim(),of:(row.OPEN_FLAG||"").trim(),rev:parseFloat(row.Sales)||0,cost:parseFloat(row.COSTSALES)||0,od,terr:(row.TERRITORY_NAME||"").trim()})});
+  return{rows,total:r.data.length,skipped:sk,parsed:rows.length}}
+
+/* ══════════════════════════════════════════════════════════════════
+   DEFAULT DATA
+   ══════════════════════════════════════════════════════════════════ */
+const DEFAULT_DATA={"as_of_date":"2026-03-02","d1":[{"region":"CAN","shipped":1446257.31,"open":8764932.22,"total":10211189.54,"budget":21192048.33,"pct":48.2},{"region":"USA","shipped":1587541.77,"open":6115239.33,"total":7702781.1,"budget":18797872.83,"pct":41.0},{"region":"Europe/ROW","shipped":640201.36,"open":2815624.62,"total":3455825.97,"budget":8471800,"pct":40.8},{"region":"DTC","shipped":0.0,"open":0.0,"total":0.0,"budget":0,"pct":null},{"region":"GLOBAL","shipped":3674000.44,"open":17695796.17,"total":21369796.61,"budget":48461721.16,"pct":44.1}],"d2":[{"channel":"Key Accounts","shipped":719448.12,"open":7234660.91,"total":7954109.04},{"channel":"Specialty","shipped":966993.42,"open":6697134.24,"total":7664127.67},{"channel":"Elite/Pro","shipped":1331023.86,"open":932203.22,"total":2263227.09},{"channel":"Other","shipped":16333.67,"open":16173.17,"total":32506.85}],"d2_drill":{"ka":[{"name":"PRO HOCKEY LIFE","total":2741001.43},{"name":"PURE HOCKEY","total":2055784.67},{"name":"MONKEY USA","total":2049783.43},{"name":"SPORT CHEK","total":566998.33},{"name":"PIAS USA","total":216624.65},{"name":"PERANIS","total":195616.01},{"name":"PIAS CANADA","total":124953.8},{"name":"MONKEY CANADA","total":3346.71}],"sp":[{"name":"SOURCE FOR SPORTS CANADA","total":2671536.23},{"name":"FGL FRANCHISE DIVISION","total":1297555.96},{"name":"INDEPENDENTS USA","total":897819.13},{"name":"SPORTS EXCELLENCE CANADA","total":870111.86},{"name":"INDEPENDENTS CANADA","total":869691.71},{"name":"SPORTS EXCELLENCE USA","total":611157.28},{"name":"SOURCE FOR SPORTS USA","total":322172.53},{"name":"SPORTS AUX PUCES","total":124082.97}]},"d3":[{"tier":"KA - Big 4","shipped":203338.0,"open":1076184.5,"total":1279522.5},{"tier":"KA - Top 10","shipped":225616.9,"open":731575.27,"total":957192.18},{"tier":"Others","shipped":211246.45,"open":1007864.84,"total":1219111.29}],"d4":[{"rep":"Adam Berkhoel","total":606782.98,"pct":80.9,"weekly":23972.16,"hb":true,"budget":750000.0,"ca":true,"gm":75.6,"profit":458429.59},{"rep":"MITCHELL WALKER","total":120165.72,"pct":12.0,"weekly":18306.58,"hb":true,"budget":1000000.0,"ca":false,"gm":82.5,"profit":99120.2},{"rep":"Scott Sissions","total":824879.54,"pct":54.4,"weekly":7801.86,"hb":true,"budget":1516940.0,"ca":true,"gm":58.7,"profit":484091.73},{"rep":"SCOTT WALKER","total":64571.98,"pct":8.6,"weekly":10476.27,"hb":true,"budget":750000.0,"ca":true,"gm":74.9,"profit":48367.0},{"rep":"Jon Nassoura","total":68887.0,"pct":6.9,"weekly":11502.0,"hb":true,"budget":1000000.0,"ca":false,"gm":74.6,"profit":51385.47},{"rep":"Zac Lampson","total":949477.13,"pct":52.6,"weekly":9656.07,"hb":true,"budget":1805680.19,"ca":false,"gm":72.7,"profit":690430.08},{"rep":"Matt Shaw","total":737604.14,"pct":42.3,"weekly":20813.25,"hb":true,"budget":1742900.0,"ca":false,"gm":72.2,"profit":532832.3},{"rep":"Mario Therrien","total":68973.18,"pct":9.2,"weekly":6764.86,"hb":true,"budget":750000.0,"ca":true,"gm":46.6,"profit":32123.34},{"rep":"Brent Hobday","total":587806.47,"pct":50.3,"weekly":3202.51,"hb":true,"budget":1168073.0,"ca":true,"gm":63.2,"profit":371372.5},{"rep":"Key Accounts Canada","total":3465557.19,"pct":62.9,"weekly":10029.36,"hb":true,"budget":5510478.0,"ca":true,"gm":84.9,"profit":2940609.38},{"rep":"JEFF LYNCH","total":757578.39,"pct":61.3,"weekly":180521.08,"hb":true,"budget":1236510.5,"ca":true,"gm":64.2,"profit":486706.68},{"rep":"SCOTT BROWN","total":514689.95,"pct":null,"weekly":4675.19,"hb":false,"budget":0,"ca":false,"gm":72.1,"profit":371187.51},{"rep":"Brad Savelson","total":881957.82,"pct":50.9,"weekly":65792.36,"hb":true,"budget":1734334.0,"ca":true,"gm":61.2,"profit":539767.27},{"rep":"Dave Campbell","total":100635.91,"pct":13.4,"weekly":20202.45,"hb":true,"budget":750000.0,"ca":true,"gm":88.4,"profit":89005.52},{"rep":"Steve Boersma","total":580026.08,"pct":38.0,"weekly":92733.32,"hb":true,"budget":1526577.0,"ca":false,"gm":83.0,"profit":481423.16},{"rep":"Key Accounts US","total":3689462.86,"pct":40.8,"weekly":37237.45,"hb":true,"budget":9049259.0,"ca":false,"gm":75.7,"profit":2793912.37},{"rep":"Jesse Nifong (Hockey)","total":92459.63,"pct":42.3,"weekly":855.61,"hb":true,"budget":218738.09,"ca":false,"gm":67.8,"profit":62673.47},{"rep":"Marc-Andre Bellehumeur","total":1634435.78,"pct":70.8,"weekly":278300.39,"hb":true,"budget":2307405.5,"ca":true,"gm":65.8,"profit":1075696.28},{"rep":"DAVE MCNALLY","total":6327.06,"pct":null,"weekly":0.0,"hb":false,"budget":0,"ca":false,"gm":51.3,"profit":3243.59},{"rep":"Mario Richard","total":836396.65,"pct":46.6,"weekly":3006.19,"hb":true,"budget":1795191.18,"ca":true,"gm":57.6,"profit":481902.64},{"rep":"Carl Menard","total":79791.27,"pct":null,"weekly":0.0,"hb":false,"budget":0,"ca":false,"gm":45.9,"profit":36610.32},{"rep":"Greg Pettis","total":354955.15,"pct":35.4,"weekly":7060.88,"hb":true,"budget":1003929.5,"ca":true,"gm":65.2,"profit":231572.91},{"rep":"WES HUETHER","total":402962.42,"pct":49.8,"weekly":53786.55,"hb":true,"budget":809752.5,"ca":true,"gm":68.4,"profit":275670.98},{"rep":"VINCENT PIZZO","total":225730.32,"pct":73.0,"weekly":20207.58,"hb":true,"budget":309118.55,"ca":false,"gm":68.0,"profit":153487.26}],"d5":{"Sticks":[{"rep":"Key Accounts Canada","total":1757962.97,"cb":3538018.0,"pct":49.7,"ca":true},{"rep":"Key Accounts US","total":1175409.83,"cb":4696311.52,"pct":25.0,"ca":false},{"rep":"Marc-Andre Bellehumeur","total":485173.88,"cb":813762.5,"pct":59.6,"ca":true},{"rep":"Steve Boersma","total":298360.7,"cb":586500.0,"pct":50.9,"ca":false},{"rep":"Mario Richard","total":285599.54,"cb":728905.0,"pct":39.2,"ca":true},{"rep":"Matt Shaw","total":267159.64,"cb":658800.0,"pct":40.6,"ca":false},{"rep":"Zac Lampson","total":248552.78,"cb":458377.01,"pct":54.2,"ca":false},{"rep":"Scott Sissions","total":233735.9,"cb":398653.0,"pct":58.6,"ca":true},{"rep":"Brent Hobday","total":213877.23,"cb":473405.0,"pct":45.2,"ca":true},{"rep":"Brad Savelson","total":206519.91,"cb":639115.0,"pct":32.3,"ca":true}],"Custom Skates":[{"rep":"Key Accounts US","total":228973.49,"cb":1363176.34,"pct":16.8,"ca":false},{"rep":"Brad Savelson","total":69724.91,"cb":173740.0,"pct":40.1,"ca":true},{"rep":"Key Accounts Canada","total":58738.74,"cb":213525.0,"pct":27.5,"ca":true},{"rep":"Zac Lampson","total":55240.0,"cb":257000.0,"pct":21.5,"ca":false},{"rep":"MITCHELL WALKER","total":41496.83,"cb":200000.0,"pct":20.7,"ca":false},{"rep":"Jon Nassoura","total":37602.0,"cb":300000.0,"pct":12.5,"ca":false},{"rep":"Scott Sissions","total":34314.96,"cb":191771.0,"pct":17.9,"ca":true},{"rep":"SCOTT WALKER","total":33821.05,"cb":300000.0,"pct":11.3,"ca":true},{"rep":"Steve Boersma","total":31889.5,"cb":189020.0,"pct":16.9,"ca":false},{"rep":"Dave Campbell","total":31183.66,"cb":200000.0,"pct":15.6,"ca":true}],"Stock Skates":[{"rep":"Key Accounts Canada","total":714476.84,"cb":335800.0,"pct":212.8,"ca":true},{"rep":"Key Accounts US","total":637673.77,"cb":207951.2,"pct":306.6,"ca":false},{"rep":"Marc-Andre Bellehumeur","total":474006.25,"cb":587285.0,"pct":80.7,"ca":true},{"rep":"Zac Lampson","total":420440.54,"cb":673233.05,"pct":62.5,"ca":false},{"rep":"JEFF LYNCH","total":291775.92,"cb":182500.0,"pct":159.9,"ca":true},{"rep":"Scott Sissions","total":239074.93,"cb":253857.5,"pct":94.2,"ca":true},{"rep":"Mario Richard","total":227737.51,"cb":370219.5,"pct":61.5,"ca":true},{"rep":"Brad Savelson","total":191083.64,"cb":250400.95,"pct":76.3,"ca":true},{"rep":"Brent Hobday","total":171199.55,"cb":199655.0,"pct":85.7,"ca":true},{"rep":"SCOTT BROWN","total":161214.35,"cb":0,"pct":null,"ca":false}],"Custom Goalie":[{"rep":"Adam Berkhoel","total":510082.15,"cb":500000.0,"pct":102.0,"ca":true},{"rep":"Scott Sissions","total":96467.58,"cb":332880.0,"pct":29.0,"ca":true},{"rep":"Key Accounts US","total":94657.68,"cb":846652.9,"pct":11.2,"ca":false},{"rep":"Matt Shaw","total":75030.48,"cb":274400.0,"pct":27.3,"ca":false},{"rep":"Brad Savelson","total":68647.13,"cb":261705.0,"pct":26.2,"ca":true},{"rep":"JEFF LYNCH","total":58059.59,"cb":231775.0,"pct":25.0,"ca":true},{"rep":"Marc-Andre Bellehumeur","total":49416.59,"cb":176660.0,"pct":28.0,"ca":true},{"rep":"Mario Richard","total":46716.37,"cb":116800.0,"pct":40.0,"ca":true},{"rep":"Brent Hobday","total":30319.29,"cb":98550.0,"pct":30.8,"ca":true},{"rep":"Key Accounts Canada","total":30241.81,"cb":43800.0,"pct":69.0,"ca":true}],"Stock Goalie":[{"rep":"Key Accounts US","total":1039672.54,"cb":1383843.8,"pct":75.1,"ca":false},{"rep":"Key Accounts Canada","total":722163.44,"cb":551150.0,"pct":131.0,"ca":true},{"rep":"Marc-Andre Bellehumeur","total":500587.78,"cb":370830.0,"pct":135.0,"ca":true},{"rep":"Brad Savelson","total":274413.2,"cb":277400.0,"pct":98.9,"ca":true},{"rep":"Mario Richard","total":176693.11,"cb":251448.5,"pct":70.3,"ca":true},{"rep":"JEFF LYNCH","total":139051.32,"cb":260245.0,"pct":53.4,"ca":true},{"rep":"Matt Shaw","total":138943.03,"cb":134900.0,"pct":103.0,"ca":false},{"rep":"Scott Sissions","total":124470.16,"cb":210970.0,"pct":59.0,"ca":true},{"rep":"VINCENT PIZZO","total":123207.43,"cb":137829.3,"pct":89.4,"ca":false},{"rep":"Brent Hobday","total":86263.65,"cb":159870.0,"pct":54.0,"ca":true}],"Other":[{"rep":"Key Accounts US","total":513075.55,"cb":551323.2400000003,"pct":93.1,"ca":false},{"rep":"Key Accounts Canada","total":181973.38,"cb":828185.0,"pct":22.0,"ca":true},{"rep":"Zac Lampson","total":150457.97,"cb":271570.13,"pct":55.4,"ca":false},{"rep":"Matt Shaw","total":109934.29,"cb":269850.0,"pct":40.7,"ca":false},{"rep":"Scott Sissions","total":96816.01,"cb":128808.5,"pct":75.2,"ca":true},{"rep":"Marc-Andre Bellehumeur","total":96101.4,"cb":273239.0,"pct":35.2,"ca":true},{"rep":"JEFF LYNCH","total":89343.8,"cb":96031.5,"pct":93.0,"ca":true},{"rep":"Mario Richard","total":86762.88,"cb":187658.18,"pct":46.2,"ca":true},{"rep":"Steve Boersma","total":72773.03,"cb":225175.0,"pct":32.3,"ca":false},{"rep":"SCOTT BROWN","total":72073.94,"cb":0,"pct":null,"ca":false}]},"d6":[{"rep":"Jonathan Weaver","total":92643.35,"pct":11.2,"weekly":11100.99,"hb":true,"budget":830200.0,"ca":false,"gm":67.1,"profit":62205.97},{"rep":"Andreas Lindqvist","total":2030930.65,"pct":244.6,"weekly":43724.5,"hb":true,"budget":830200.0,"ca":false,"gm":69.9,"profit":1419897.63},{"rep":"Adam Berkhoel","total":4674.0,"pct":0.6,"weekly":0.0,"hb":true,"budget":750000.0,"ca":true,"gm":70.9,"profit":3315.22},{"rep":"Mario Therrien","total":2123.0,"pct":0.3,"weekly":0.0,"hb":true,"budget":750000.0,"ca":true,"gm":75.9,"profit":1611.88},{"rep":"Key Accounts Other","total":108384.41,"pct":null,"weekly":16545.99,"hb":false,"budget":0,"ca":false,"gm":58.3,"profit":63163.47},{"rep":"Andrew McPherson","total":293352.86,"pct":35.3,"weekly":19959.85,"hb":true,"budget":830200.0,"ca":false,"gm":61.3,"profit":179715.61},{"rep":"PETTERI LINNONMAA","total":686653.24,"pct":82.7,"weekly":4298.28,"hb":true,"budget":830200.0,"ca":false,"gm":55.9,"profit":383502.38},{"rep":"Andris Stepins","total":117579.12,"pct":14.2,"weekly":0.0,"hb":true,"budget":830200.0,"ca":false,"gm":58.4,"profit":68645.33},{"rep":"Filippo Dal Ben","total":21700.73,"pct":2.6,"weekly":0.0,"hb":true,"budget":830200.0,"ca":false,"gm":66.4,"profit":14416.21},{"rep":"DAVE MCNALLY","total":47156.15,"pct":null,"weekly":0.0,"hb":false,"budget":0,"ca":false,"gm":85.2,"profit":40191.18},{"rep":"PHILIPPE BOUDREAULT MCNICOLL","total":2429.14,"pct":0.3,"weekly":1219.26,"hb":true,"budget":830200.0,"ca":false,"gm":63.4,"profit":1539.31},{"rep":"ProjektS","total":36833.71,"pct":4.4,"weekly":0.0,"hb":true,"budget":830200.0,"ca":false,"gm":72.6,"profit":26726.68},{"rep":"Tilen Smolnikar","total":2976.48,"pct":0.4,"weekly":716.17,"hb":true,"budget":830200.0,"ca":false,"gm":47.0,"profit":1398.36},{"rep":"Zac Lampson","total":8389.12,"pct":0.5,"weekly":0.0,"hb":true,"budget":1805680.19,"ca":false,"gm":55.6,"profit":4660.54}],"d7":{"Sticks":[{"rep":"Andreas Lindqvist","total":578058.46,"cb":155662.5,"pct":371.4,"ca":false},{"rep":"PETTERI LINNONMAA","total":222346.05,"cb":155662.5,"pct":142.8,"ca":false},{"rep":"Andrew McPherson","total":73213.14,"cb":155662.5,"pct":47.0,"ca":false},{"rep":"Andris Stepins","total":26457.16,"cb":155662.5,"pct":17.0,"ca":false},{"rep":"Jonathan Weaver","total":19738.9,"cb":155662.5,"pct":12.7,"ca":false},{"rep":"DAVE MCNALLY","total":11130.0,"cb":0,"pct":null,"ca":false},{"rep":"ProjektS","total":9803.63,"cb":155662.5,"pct":6.3,"ca":false},{"rep":"Filippo Dal Ben","total":6753.42,"cb":155662.5,"pct":4.3,"ca":false},{"rep":"Key Accounts Other","total":3679.02,"cb":0,"pct":null,"ca":false},{"rep":"PHILIPPE BOUDREAULT MCNICOLL","total":245.49,"cb":155662.5,"pct":0.2,"ca":false}],"Custom Skates":[{"rep":"Andreas Lindqvist","total":66470.12,"cb":103775.0,"pct":64.1,"ca":false},{"rep":"Andrew McPherson","total":29397.9,"cb":103775.0,"pct":28.3,"ca":false},{"rep":"Key Accounts Other","total":15721.88,"cb":0,"pct":null,"ca":false},{"rep":"Jonathan Weaver","total":14517.52,"cb":103775.0,"pct":14.0,"ca":false},{"rep":"PETTERI LINNONMAA","total":14338.24,"cb":103775.0,"pct":13.8,"ca":false},{"rep":"DAVE MCNALLY","total":10999.99,"cb":0,"pct":null,"ca":false},{"rep":"Andris Stepins","total":8448.08,"cb":103775.0,"pct":8.1,"ca":false},{"rep":"Tilen Smolnikar","total":2784.02,"cb":103775.0,"pct":2.7,"ca":false}],"Stock Skates":[{"rep":"Andreas Lindqvist","total":683663.36,"cb":155662.5,"pct":439.2,"ca":false},{"rep":"PETTERI LINNONMAA","total":202755.99,"cb":155662.5,"pct":130.3,"ca":false},{"rep":"Andrew McPherson","total":98644.53,"cb":155662.5,"pct":63.4,"ca":false},{"rep":"Andris Stepins","total":34316.62,"cb":155662.5,"pct":22.0,"ca":false},{"rep":"Jonathan Weaver","total":30967.26,"cb":155662.5,"pct":19.9,"ca":false},{"rep":"ProjektS","total":19007.62,"cb":155662.5,"pct":12.2,"ca":false},{"rep":"Key Accounts Other","total":11081.54,"cb":0,"pct":null,"ca":false},{"rep":"Filippo Dal Ben","total":5169.7,"cb":155662.5,"pct":3.3,"ca":false},{"rep":"Zac Lampson","total":2420.48,"cb":673233.05,"pct":0.4,"ca":false},{"rep":"DAVE MCNALLY","total":667.5,"cb":0,"pct":null,"ca":false}],"Custom Goalie":[{"rep":"Key Accounts Other","total":71913.04,"cb":0,"pct":null,"ca":false},{"rep":"Andreas Lindqvist","total":26280.77,"cb":103775.0,"pct":25.3,"ca":false},{"rep":"Adam Berkhoel","total":4674.0,"cb":500000.0,"pct":0.9,"ca":true},{"rep":"Andris Stepins","total":2938.27,"cb":103775.0,"pct":2.8,"ca":false},{"rep":"PETTERI LINNONMAA","total":2839.95,"cb":103775.0,"pct":2.7,"ca":false},{"rep":"Mario Therrien","total":2123.0,"cb":500000.0,"pct":0.4,"ca":true}],"Stock Goalie":[{"rep":"Andreas Lindqvist","total":356170.14,"cb":155662.5,"pct":228.8,"ca":false},{"rep":"PETTERI LINNONMAA","total":128855.21,"cb":155662.5,"pct":82.8,"ca":false},{"rep":"Andrew McPherson","total":55917.67,"cb":155662.5,"pct":35.9,"ca":false},{"rep":"Andris Stepins","total":25503.9,"cb":155662.5,"pct":16.4,"ca":false},{"rep":"Filippo Dal Ben","total":7773.16,"cb":155662.5,"pct":5.0,"ca":false},{"rep":"PHILIPPE BOUDREAULT MCNICOLL","total":1331.56,"cb":155662.5,"pct":0.9,"ca":false},{"rep":"DAVE MCNALLY","total":358.66,"cb":0,"pct":null,"ca":false}],"Other":[{"rep":"Andreas Lindqvist","total":320287.8,"cb":155662.5,"pct":205.8,"ca":false},{"rep":"PETTERI LINNONMAA","total":115517.8,"cb":155662.5,"pct":74.2,"ca":false},{"rep":"Andrew McPherson","total":36179.63,"cb":155662.5,"pct":23.2,"ca":false},{"rep":"Jonathan Weaver","total":27419.68,"cb":155662.5,"pct":17.6,"ca":false},{"rep":"DAVE MCNALLY","total":24000.0,"cb":0,"pct":null,"ca":false},{"rep":"Andris Stepins","total":19915.1,"cb":155662.5,"pct":12.8,"ca":false},{"rep":"ProjektS","total":8022.47,"cb":155662.5,"pct":5.2,"ca":false},{"rep":"Key Accounts Other","total":5988.94,"cb":0,"pct":null,"ca":false},{"rep":"Zac Lampson","total":5968.64,"cb":271570.13,"pct":2.2,"ca":false},{"rep":"Filippo Dal Ben","total":2004.45,"cb":155662.5,"pct":1.3,"ca":false}]},"monthly_na":{"2023-11":[{"rep":"Key Accounts US","total":21845.5}],"2024-03":[{"rep":"Key Accounts US","total":72785.0}],"2024-04":[{"rep":"Key Accounts US","total":18734.4}],"2024-07":[{"rep":"Adam Berkhoel","total":4219.0}],"2024-08":[{"rep":"Key Accounts US","total":15766.0}],"2024-10":[{"rep":"Key Accounts Canada","total":220352.43},{"rep":"Key Accounts US","total":79473.93},{"rep":"Adam Berkhoel","total":621.45}],"2024-12":[{"rep":"Marc-Andre Bellehumeur","total":2030.9},{"rep":"Brad Savelson","total":1191.83}],"2025-01":[{"rep":"SCOTT BROWN","total":4253.88},{"rep":"Brent Hobday","total":200.73}],"2025-02":[{"rep":"Matt Shaw","total":22087.69},{"rep":"Key Accounts US","total":3137.89},{"rep":"Brent Hobday","total":276.0},{"rep":"Scott Sissions","total":36.56}],"2025-03":[{"rep":"Marc-Andre Bellehumeur","total":122915.86},{"rep":"Matt Shaw","total":9801.4},{"rep":"SCOTT BROWN","total":1260.0},{"rep":"MITCHELL WALKER","total":984.64}],"2025-04":[{"rep":"Scott Sissions","total":12092.72},{"rep":"Marc-Andre Bellehumeur","total":11930.92},{"rep":"SCOTT BROWN","total":11426.08},{"rep":"Mario Richard","total":11021.28},{"rep":"Key Accounts US","total":10936.3},{"rep":"Brad Savelson","total":7689.13},{"rep":"Greg Pettis","total":6613.21},{"rep":"Brent Hobday","total":6405.16},{"rep":"Zac Lampson","total":3541.16},{"rep":"Matt Shaw","total":3250.51},{"rep":"Steve Boersma","total":1627.18},{"rep":"VINCENT PIZZO","total":518.4},{"rep":"Key Accounts Canada","total":196.0}],"2025-05":[{"rep":"Matt Shaw","total":8716.72},{"rep":"Brad Savelson","total":4284.1},{"rep":"Key Accounts Canada","total":2953.01},{"rep":"Carl Menard","total":1432.89},{"rep":"VINCENT PIZZO","total":1043.95},{"rep":"Marc-Andre Bellehumeur","total":941.02},{"rep":"Mario Therrien","total":459.96}],"2025-06":[{"rep":"Key Accounts Canada","total":1023.55},{"rep":"Key Accounts US","total":650.0},{"rep":"Mario Richard","total":36.56}],"2025-07":[{"rep":"Key Accounts Canada","total":22080.28},{"rep":"Matt Shaw","total":20397.86},{"rep":"Adam Berkhoel","total":8679.0},{"rep":"JEFF LYNCH","total":3934.28},{"rep":"Key Accounts US","total":2613.99},{"rep":"Scott Sissions","total":2120.95},{"rep":"Greg Pettis","total":1966.81},{"rep":"Mario Therrien","total":1682.46},{"rep":"MITCHELL WALKER","total":1679.71},{"rep":"Carl Menard","total":1637.69},{"rep":"Marc-Andre Bellehumeur","total":1017.67},{"rep":"Dave Campbell","total":900.0}],"2025-08":[{"rep":"Key Accounts Canada","total":39164.81},{"rep":"Steve Boersma","total":21155.99},{"rep":"Adam Berkhoel","total":16021.57},{"rep":"Marc-Andre Bellehumeur","total":13587.81},{"rep":"Brent Hobday","total":12781.02},{"rep":"Brad Savelson","total":8271.6},{"rep":"Zac Lampson","total":6860.98},{"rep":"Dave Campbell","total":5209.18},{"rep":"JEFF LYNCH","total":4636.01},{"rep":"Scott Sissions","total":4489.76},{"rep":"Mario Richard","total":4230.5},{"rep":"Mario Therrien","total":3929.56},{"rep":"Matt Shaw","total":2932.94},{"rep":"Key Accounts US","total":2599.96},{"rep":"SCOTT BROWN","total":2398.98},{"rep":"VINCENT PIZZO","total":1224.97}],"2025-09":[{"rep":"Key Accounts US","total":503117.14},{"rep":"Scott Sissions","total":8990.37},{"rep":"Matt Shaw","total":8005.91},{"rep":"Mario Richard","total":7633.44},{"rep":"Adam Berkhoel","total":6567.17},{"rep":"JEFF LYNCH","total":4850.22},{"rep":"Zac Lampson","total":4608.13},{"rep":"Greg Pettis","total":3916.84},{"rep":"SCOTT BROWN","total":3629.0},{"rep":"WES HUETHER","total":3524.8},{"rep":"Steve Boersma","total":2164.47},{"rep":"MITCHELL WALKER","total":850.0},{"rep":"Marc-Andre Bellehumeur","total":366.84}],"2025-10":[{"rep":"Key Accounts US","total":867657.29},{"rep":"Marc-Andre Bellehumeur","total":576808.91},{"rep":"Brad Savelson","total":307850.8},{"rep":"Zac Lampson","total":237339.5},{"rep":"Scott Sissions","total":217142.41},{"rep":"Mario Richard","total":173941.83},{"rep":"Matt Shaw","total":173242.45},{"rep":"SCOTT BROWN","total":120552.97},{"rep":"JEFF LYNCH","total":112014.0},{"rep":"Brent Hobday","total":102459.13},{"rep":"WES HUETHER","total":92179.36},{"rep":"Key Accounts Canada","total":64141.21},{"rep":"Greg Pettis","total":63190.32},{"rep":"Adam Berkhoel","total":44574.68},{"rep":"Mario Therrien","total":6683.42},{"rep":"Steve Boersma","total":6075.0},{"rep":"Jon Nassoura","total":3120.0},{"rep":"Jesse Nifong (Hockey)","total":2330.97},{"rep":"Dave Campbell","total":1053.9},{"rep":"MITCHELL WALKER","total":658.0}],"2025-11":[{"rep":"Key Accounts Canada","total":706109.62},{"rep":"Scott Sissions","total":260038.56},{"rep":"Zac Lampson","total":120636.2},{"rep":"VINCENT PIZZO","total":103861.0},{"rep":"Matt Shaw","total":91368.34},{"rep":"Brent Hobday","total":91032.92},{"rep":"Adam Berkhoel","total":62215.92},{"rep":"Jesse Nifong (Hockey)","total":49052.0},{"rep":"Mario Richard","total":42248.96},{"rep":"Brad Savelson","total":22350.22},{"rep":"Key Accounts US","total":21858.77},{"rep":"Greg Pettis","total":20084.44},{"rep":"Steve Boersma","total":10135.0},{"rep":"JEFF LYNCH","total":9427.02},{"rep":"WES HUETHER","total":7041.29},{"rep":"Mario Therrien","total":5366.09},{"rep":"SCOTT BROWN","total":5098.55},{"rep":"Jon Nassoura","total":3300.0},{"rep":"Marc-Andre Bellehumeur","total":2867.08},{"rep":"Dave Campbell","total":1523.59}],"2025-12":[{"rep":"Key Accounts US","total":1625278.39},{"rep":"Key Accounts Canada","total":1039286.93},{"rep":"Mario Richard","total":495779.14},{"rep":"Marc-Andre Bellehumeur","total":473167.49},{"rep":"Zac Lampson","total":441931.65},{"rep":"JEFF LYNCH","total":380188.28},{"rep":"Brad Savelson","total":344709.73},{"rep":"Steve Boersma","total":332693.53},{"rep":"Brent Hobday","total":315589.55},{"rep":"Scott Sissions","total":270562.44},{"rep":"Matt Shaw","total":259503.8},{"rep":"SCOTT BROWN","total":231418.59},{"rep":"WES HUETHER","total":229497.25},{"rep":"Adam Berkhoel","total":159351.81},{"rep":"Greg Pettis","total":127505.05},{"rep":"SCOTT WALKER","total":12056.66},{"rep":"Jon Nassoura","total":8095.0},{"rep":"Dave Campbell","total":7545.21},{"rep":"MITCHELL WALKER","total":7440.57},{"rep":"Mario Therrien","total":7001.53}],"2026-01":[{"rep":"Key Accounts Canada","total":580918.84},{"rep":"Adam Berkhoel","total":172965.55},{"rep":"Key Accounts US","total":152192.84},{"rep":"Greg Pettis","total":111566.88},{"rep":"SCOTT BROWN","total":108358.43},{"rep":"Brad Savelson","total":103767.01},{"rep":"Steve Boersma","total":82786.92},{"rep":"Zac Lampson","total":73785.01},{"rep":"Matt Shaw","total":60046.41},{"rep":"MITCHELL WALKER","total":57129.97},{"rep":"Dave Campbell","total":56711.57},{"rep":"Marc-Andre Bellehumeur","total":49630.15},{"rep":"VINCENT PIZZO","total":48102.03},{"rep":"JEFF LYNCH","total":40194.84},{"rep":"Brent Hobday","total":39946.43},{"rep":"SCOTT WALKER","total":32655.51},{"rep":"Scott Sissions","total":29946.34},{"rep":"Mario Richard","total":24955.57},{"rep":"Mario Therrien","total":24195.05},{"rep":"Jon Nassoura","total":23667.0}],"2026-02":[{"rep":"Key Accounts Canada","total":784395.18},{"rep":"Marc-Andre Bellehumeur","total":379171.11},{"rep":"Key Accounts US","total":284712.96},{"rep":"JEFF LYNCH","total":195842.38},{"rep":"Adam Berkhoel","total":128651.44},{"rep":"Steve Boersma","total":121238.16},{"rep":"Brad Savelson","total":76464.51},{"rep":"Mario Richard","total":76406.69},{"rep":"Carl Menard","total":70675.86},{"rep":"VINCENT PIZZO","total":68580.0},{"rep":"WES HUETHER","total":65336.96},{"rep":"Matt Shaw","total":62169.86},{"rep":"Zac Lampson","total":60410.5},{"rep":"MITCHELL WALKER","total":49829.82},{"rep":"Jesse Nifong (Hockey)","total":32503.29},{"rep":"Jon Nassoura","total":30705.0},{"rep":"Dave Campbell","total":27692.45},{"rep":"SCOTT BROWN","total":26085.27},{"rep":"Greg Pettis","total":20111.6},{"rep":"Mario Therrien","total":19539.36}],"2026-03":[{"rep":"Matt Shaw","total":16080.25},{"rep":"JEFF LYNCH","total":6491.36},{"rep":"Key Accounts US","total":6102.5},{"rep":"Brad Savelson","total":5378.9},{"rep":"Key Accounts Canada","total":4935.33},{"rep":"Adam Berkhoel","total":2915.39},{"rep":"SCOTT WALKER","total":2324.0},{"rep":"Steve Boersma","total":2149.83},{"rep":"Brent Hobday","total":1678.28},{"rep":"MITCHELL WALKER","total":943.0},{"rep":"Scott Sissions","total":706.49},{"rep":"Zac Lampson","total":364.0},{"rep":"WES HUETHER","total":308.88},{"rep":"SCOTT BROWN","total":208.2},{"rep":"Mario Richard","total":142.69},{"rep":"Mario Therrien","total":115.76}]},"monthly_eu":{"2024-12":[{"rep":"PETTERI LINNONMAA","total":58.68}],"2025-01":[{"rep":"Andreas Lindqvist","total":849.04},{"rep":"ProjektS","total":5.32}],"2025-02":[{"rep":"Andris Stepins","total":5939.63}],"2025-03":[{"rep":"Andreas Lindqvist","total":7310.88},{"rep":"DAVE MCNALLY","total":179.33}],"2025-04":[{"rep":"Andreas Lindqvist","total":742.93},{"rep":"DAVE MCNALLY","total":179.33},{"rep":"Jonathan Weaver","total":172.13}],"2025-05":[{"rep":"PETTERI LINNONMAA","total":3482.51},{"rep":"Andrew McPherson","total":544.7}],"2025-06":[{"rep":"DAVE MCNALLY","total":24000.0},{"rep":"Andreas Lindqvist","total":2553.25}],"2025-07":[{"rep":"Andreas Lindqvist","total":2702.25},{"rep":"Key Accounts Other","total":506.77},{"rep":"DAVE MCNALLY","total":480.0}],"2025-08":[{"rep":"DAVE MCNALLY","total":9090.0},{"rep":"Andreas Lindqvist","total":4370.31},{"rep":"Jonathan Weaver","total":2735.44},{"rep":"Key Accounts Other","total":2518.21},{"rep":"Andrew McPherson","total":1377.75},{"rep":"Filippo Dal Ben","total":862.25}],"2025-09":[{"rep":"Andreas Lindqvist","total":11562.0},{"rep":"Key Accounts Other","total":6820.46},{"rep":"Andrew McPherson","total":930.72}],"2025-10":[{"rep":"Andreas Lindqvist","total":738241.5},{"rep":"PETTERI LINNONMAA","total":162686.99},{"rep":"Andrew McPherson","total":71785.23},{"rep":"Andris Stepins","total":48522.05},{"rep":"Key Accounts Other","total":26560.24},{"rep":"DAVE MCNALLY","total":2865.0}],"2025-11":[{"rep":"Andreas Lindqvist","total":208795.71},{"rep":"PETTERI LINNONMAA","total":94655.76},{"rep":"Andris Stepins","total":9356.35},{"rep":"Key Accounts Other","total":6871.74},{"rep":"DAVE MCNALLY","total":3215.0},{"rep":"Andrew McPherson","total":700.55}],"2025-12":[{"rep":"Andreas Lindqvist","total":621341.01},{"rep":"PETTERI LINNONMAA","total":295650.82},{"rep":"Andrew McPherson","total":60600.28},{"rep":"Jonathan Weaver","total":43779.17},{"rep":"Key Accounts Other","total":24742.42},{"rep":"Zac Lampson","total":8389.12},{"rep":"DAVE MCNALLY","total":7147.49},{"rep":"Andris Stepins","total":1697.42},{"rep":"ProjektS","total":574.46}],"2026-01":[{"rep":"Andreas Lindqvist","total":211649.85},{"rep":"PETTERI LINNONMAA","total":69532.63},{"rep":"Andrew McPherson","total":68086.38},{"rep":"ProjektS","total":36253.94},{"rep":"Andris Stepins","total":26241.53},{"rep":"Jonathan Weaver","total":21209.22},{"rep":"Key Accounts Other","total":21140.4},{"rep":"Filippo Dal Ben","total":20838.48},{"rep":"Adam Berkhoel","total":4674.0},{"rep":"Mario Therrien","total":2123.0},{"rep":"Tilen Smolnikar","total":1578.25}],"2026-02":[{"rep":"Andreas Lindqvist","total":212524.0},{"rep":"Andrew McPherson","total":88152.45},{"rep":"PETTERI LINNONMAA","total":58499.2},{"rep":"Andris Stepins","total":25822.15},{"rep":"Key Accounts Other","total":19224.17},{"rep":"Jonathan Weaver","total":16937.36},{"rep":"PHILIPPE BOUDREAULT MCNICOLL","total":2429.14},{"rep":"Tilen Smolnikar","total":1398.23}],"2026-03":[{"rep":"Andreas Lindqvist","total":8287.92},{"rep":"Jonathan Weaver","total":7810.03},{"rep":"PETTERI LINNONMAA","total":2086.65},{"rep":"Andrew McPherson","total":1174.78}]},"weekly_trend":[{"week":"2025-W51","na":710517.42,"eu":49840.14},{"week":"2025-W52","na":350267.86,"eu":32324.85},{"week":"2026-W01","na":60936.92,"eu":15713.29},{"week":"2026-W02","na":940107.38,"eu":81971.46},{"week":"2026-W03","na":387161.43,"eu":180956.88},{"week":"2026-W04","na":332717.32,"eu":105194.57},{"week":"2026-W05","na":190011.89,"eu":113383.54},{"week":"2026-W06","na":474358.41,"eu":209505.46},{"week":"2026-W07","na":852072.46,"eu":44346.03},{"week":"2026-W08","na":474660.39,"eu":92929.56},{"week":"2026-W09","na":836479.51,"eu":78205.66},{"week":"2026-W10","na":50424.46,"eu":19359.37}],"category_mix":[{"category":"Sticks","total":6223344.02,"gm":80.1,"profit":4987095.6},{"category":"Stock Skates","total":4057657.91,"gm":70.8,"profit":2871900.61},{"category":"Stock Goalie","total":3677790.27,"gm":66.8,"profit":2455445.62},{"category":"Other","total":1746149.12,"gm":86.6,"profit":1512454.49},{"category":"Custom Goalie","total":1151657.83,"gm":51.2,"profit":589262.35},{"category":"Custom Skates","total":795515.47,"gm":47.2,"profit":375462.89}],"channel_margin":[{"channel":"Key Accounts","revenue":7954109.04,"cost":1567290.89,"profit":6386818.15,"gm":80.3},{"channel":"Specialty","revenue":7664127.67,"cost":2752859.45,"profit":4911268.22,"gm":64.1},{"channel":"EU","revenue":3455825.97,"cost":1184836.21,"profit":2270989.76,"gm":65.7},{"channel":"Elite/Pro","revenue":2263227.09,"cost":628200.39,"profit":1635026.7,"gm":72.2},{"channel":"Other","revenue":32506.85,"cost":14986.02,"profit":17520.83,"gm":53.9}]};
+
+/* ══════════════════════════════════════════════════════════════════
+   HELPERS
+   ══════════════════════════════════════════════════════════════════ */
+const fmt=(n,c)=>{const s=c==="CAD"?"C$":"$";const v=c==="CAD"?n*FX:n;return v>=1e6?`${s}${(v/1e6).toFixed(2)}M`:v>=1e3?`${s}${(v/1e3).toFixed(1)}K`:`${s}${v.toFixed(0)}`};
+const fmtShort=(n)=>n>=1e6?`${(n/1e6).toFixed(1)}M`:n>=1e3?`${(n/1e3).toFixed(0)}K`:`${n.toFixed(0)}`;
+const pctCol=(p)=>p===null?"var(--text-dim)":p>=60?"var(--green)":p>=45?"var(--blue)":p>=35?"var(--amber)":"var(--red)";
+const medalCol=(i)=>i===0?"var(--gold)":i===1?"var(--silver)":i===2?"var(--bronze)":"var(--text-muted)";
+
+const TABS=[{id:"score",icon:"⚡",label:"Scoreboard"},{id:"leader",icon:"🏆",label:"Leaderboards"},{id:"horse",icon:"🐎",label:"Work Horse"},{id:"deep",icon:"📊",label:"Deep Dive"}];
+const MONTHS={"2025-09":"Sep","2025-10":"Oct","2025-11":"Nov","2025-12":"Dec","2026-01":"Jan","2026-02":"Feb","2026-03":"Mar"};
+
+/* ══════════════════════════════════════════════════════════════════
+   SVG GAUGE COMPONENT
+   ══════════════════════════════════════════════════════════════════ */
+function Gauge({value, size=140, stroke=12, label, sub}) {
+  const r = (size-stroke)/2;
+  const circ = 2*Math.PI*r;
+  const pct = value != null ? Math.min(value/100, 1.5) : 0;
+  const offset = circ*(1-pct*0.75);
+  const color = value===null?"var(--text-muted)":value>=60?"var(--green)":value>=45?"var(--blue)":value>=35?"var(--amber)":"var(--red)";
+  return (
+    <div style={{textAlign:"center",position:"relative",width:size,height:size*0.85}}>
+      <svg width={size} height={size*0.85} viewBox={`0 0 ${size} ${size*0.85}`}>
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--card-border)" strokeWidth={stroke} strokeDasharray={`${circ*0.75} ${circ*0.25}`} strokeLinecap="round" transform={`rotate(135 ${size/2} ${size/2})`}/>
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" transform={`rotate(135 ${size/2} ${size/2})`} style={{transition:"stroke-dashoffset 1.2s ease-out",filter:`drop-shadow(0 0 6px ${color})`}}/>
+      </svg>
+      <div style={{position:"absolute",top:"38%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center"}}>
+        <div className="mono" style={{fontSize:size*0.22,fontWeight:800,color}}>{value!=null?`${value}%`:"N/A"}</div>
+        {label&&<div style={{fontSize:10,color:"var(--text-dim)",marginTop:2,letterSpacing:1,textTransform:"uppercase"}}>{label}</div>}
+      </div>
+      {sub&&<div className="mono" style={{fontSize:11,color:"var(--text-dim)",fontWeight:600,marginTop:-6,textAlign:"center"}}>{sub}</div>}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   CHART COMPONENTS (Chart.js wrappers)
+   ══════════════════════════════════════════════════════════════════ */
+function BarChart({labels, datasets, horizontal=false, height=280, showLabels=false}) {
+  const ref = useRef(null); const chartRef = useRef(null);
+  useEffect(()=>{
+    if(chartRef.current)chartRef.current.destroy();
+    const dlPlugin={id:"barLabels",afterDatasetsDraw(chart){if(!showLabels)return;const ctx=chart.ctx;ctx.save();const meta=chart.getDatasetMeta(chart.data.datasets.length-1);meta.data.forEach((bar,i)=>{const v=chart.data.datasets[chart.data.datasets.length-1].data[i];if(!v)return;ctx.fillStyle="#94a3b8";ctx.font="bold 10px 'JetBrains Mono'";ctx.textAlign="center";ctx.textBaseline="bottom";ctx.fillText("$"+fmtShort(v),bar.x,bar.y-4)});ctx.restore()}};
+    chartRef.current=new Chart(ref.current,{
+      type:"bar",
+      data:{labels,datasets:datasets.map(ds=>({...ds,borderRadius:4,borderSkipped:false}))},
+      plugins:[dlPlugin],
+      options:{indexAxis:horizontal?"y":"x",responsive:true,maintainAspectRatio:false,plugins:{legend:{display:datasets.length>1,labels:{color:"#94a3b8",font:{family:"Outfit",size:11}}},tooltip:{backgroundColor:"#1e293b",titleColor:"#e2e8f0",bodyColor:"#94a3b8",borderColor:"#334155",borderWidth:1,cornerRadius:8,titleFont:{family:"Outfit"},bodyFont:{family:"JetBrains Mono",size:11},callbacks:{label:ctx=>`$${ctx.raw>=1e6?(ctx.raw/1e6).toFixed(2)+"M":(ctx.raw/1e3).toFixed(1)+"K"}`}}},scales:{x:{grid:{color:"#1a2540",drawBorder:false},ticks:{color:"#64748b",font:{family:"Outfit",size:10}},border:{display:false}},y:{grid:{color:"#1a2540",drawBorder:false},ticks:{color:"#64748b",font:{family:horizontal?"Outfit":"JetBrains Mono",size:horizontal?11:10},callback:horizontal?undefined:v=>fmtShort(v)},border:{display:false}}},animation:{duration:800,easing:"easeOutQuart"}}
+    });
+    return()=>{if(chartRef.current)chartRef.current.destroy()};
+  },[labels,datasets,showLabels]);
+  return <div style={{height,position:"relative"}}><canvas ref={ref}/></div>;
+}
+
+function LineChart({labels, datasets, height=250}) {
+  const ref = useRef(null); const chartRef = useRef(null);
+  useEffect(()=>{
+    if(chartRef.current)chartRef.current.destroy();
+    chartRef.current=new Chart(ref.current,{
+      type:"line",
+      data:{labels,datasets:datasets.map(ds=>({...ds,tension:.4,pointRadius:4,pointHoverRadius:6,borderWidth:2.5,fill:ds.fill!==undefined?ds.fill:true}))},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:"index",intersect:false},plugins:{legend:{labels:{color:"#94a3b8",font:{family:"Outfit",size:11},usePointStyle:true,pointStyle:"circle"}},tooltip:{backgroundColor:"#1e293b",titleColor:"#e2e8f0",bodyColor:"#94a3b8",borderColor:"#334155",borderWidth:1,cornerRadius:8,bodyFont:{family:"JetBrains Mono",size:11},callbacks:{label:ctx=>`${ctx.dataset.label}: $${fmtShort(ctx.raw)}`}}},scales:{x:{grid:{color:"#1a254022"},ticks:{color:"#64748b",font:{family:"Outfit",size:10}},border:{display:false}},y:{grid:{color:"#1a2540"},ticks:{color:"#64748b",font:{family:"JetBrains Mono",size:10},callback:v=>"$"+fmtShort(v)},border:{display:false}}},animation:{duration:1000,easing:"easeOutQuart"}}
+    });
+    return()=>{if(chartRef.current)chartRef.current.destroy()};
+  },[labels,datasets]);
+  return <div style={{height,position:"relative"}}><canvas ref={ref}/></div>;
+}
+
+function DoughnutChart({labels, data, colors, height=220, centerText}) {
+  const ref = useRef(null); const chartRef = useRef(null);
+  useEffect(()=>{
+    if(chartRef.current)chartRef.current.destroy();
+    const ctx=ref.current;
+    chartRef.current=new Chart(ctx,{
+      type:"doughnut",
+      data:{labels,datasets:[{data,backgroundColor:colors,borderColor:"var(--card)",borderWidth:3,hoverOffset:8}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:"68%",plugins:{legend:{position:"bottom",labels:{color:"#94a3b8",font:{family:"Outfit",size:11},usePointStyle:true,pointStyle:"circle",padding:14}},tooltip:{backgroundColor:"#1e293b",titleColor:"#e2e8f0",bodyColor:"#94a3b8",borderColor:"#334155",borderWidth:1,cornerRadius:8,bodyFont:{family:"JetBrains Mono",size:11},callbacks:{label:ctx=>`${ctx.label}: $${fmtShort(ctx.raw)} (${((ctx.raw/ctx.dataset.data.reduce((a,b)=>a+b,0))*100).toFixed(0)}%)`}}},animation:{animateRotate:true,duration:1000}}
+    });
+    return()=>{if(chartRef.current)chartRef.current.destroy()};
+  },[labels,data,colors]);
+  return (
+    <div style={{height,position:"relative"}}>
+      <canvas ref={ref}/>
+      {centerText&&<div style={{position:"absolute",top:"42%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center"}}>
+        <div className="mono" style={{fontSize:18,fontWeight:700,color:"var(--text)"}}>{centerText}</div>
+      </div>}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   UPLOAD BAR (admin only)
+   ══════════════════════════════════════════════════════════════════ */
+const DEFAULT_WEEKLY={week_label:"Week Ending Feb 27",reps:[
+{rep:"Marc-Andre Bellehumeur",total:278603.25},{rep:"JEFF LYNCH",total:174024.65},{rep:"Steve Boersma",total:95050.48},
+{rep:"PRO",total:84959.38},{rep:"EUROPE",total:61565.73},{rep:"Brad Savelson",total:60266.40},
+{rep:"IN HOUSE",total:54350.37},{rep:"WES HUETHER",total:40160.21},{rep:"VINCENT PIZZO",total:20207.58},
+{rep:"DTC",total:11887.98},{rep:"Zac Lampson",total:9292.07},{rep:"Scott Sissions",total:7146.67},
+{rep:"Greg Pettis",total:7061.68},{rep:"Matt Shaw",total:4733.00},{rep:"Mario Richard",total:2863.67},
+{rep:"Brent Hobday",total:1523.61},{rep:"Jesse Nifong (Hockey)",total:855.61}
+],cats:[
+{cat:"SKATES - STOCK",total:430357.99},{cat:"STICKS",total:233122.95},{cat:"SKATES - CUSTOM",total:132039.91},
+{cat:"PROTECTIVE",total:42669.77},{cat:"GOALIE - CUSTOM",total:41527.24},{cat:"GOALIE - STOCK",total:16136.06},
+{cat:"SKATES - OTHER",total:15353.65},{cat:"OTHER",total:2308.78},{cat:"BAGS",total:1036.00}
+]};
+
+function parseWeeklyCSV(text){
+  const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const reps=[],cats=[];let mode=null,weekLabel="Weekly Incoming Orders";
+  for(const line of lines){
+    const cols=line.split(",").map(c=>c.trim().replace(/^"|"$/g,""));
+    const h=cols[0].toUpperCase();
+    if(h==="REPS"||h==="REP"||h==="SALES REP"){mode="rep";continue}
+    if(h==="CATEGORY"||h==="CATEGORIES"||h==="PRODUCT CATEGORY"){mode="cat";continue}
+    if(h==="GRAND TOTAL"||h==="TOTAL")continue;
+    if(h==="WEEK"||h.startsWith("WEEK ENDING")){weekLabel=cols.length>1?cols[1]:cols[0];continue}
+    if(!mode)continue;
+    const name=cols[0];const val=parseFloat((cols[1]||"0").replace(/[$,]/g,""));
+    if(!name||isNaN(val))continue;
+    if(mode==="rep")reps.push({rep:name,total:val});
+    else cats.push({cat:name,total:val});
+  }
+  return{week_label:weekLabel,reps:reps.sort((a,b)=>b.total-a.total),cats:cats.sort((a,b)=>b.total-a.total)};
+}
+
+function WeeklyUploadBar({onUpload,weekLabel}){
+  const ref=useRef(null);const[st,setSt]=useState(null);
+  const handle=useCallback(f=>{
+    if(!f)return;setSt({t:"l",m:`Parsing ${f.name}...`});
+    const rd=new FileReader();
+    rd.onload=e=>{try{
+      let result;
+      if(f.name.endsWith(".csv")||f.name.endsWith(".txt")){result=parseWeeklyCSV(e.target.result)}
+      else{const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});const ws=wb.Sheets[wb.SheetNames[0]];result=parseWeeklyCSV(XLSX.utils.sheet_to_csv(ws))}
+      if(result.reps.length===0&&result.cats.length===0){setSt({t:"e",m:"No data found. Need REPS and CATEGORY headers."});return}
+      onUpload(result);const total=result.reps.reduce((s,r)=>s+r.total,0);
+      setSt({t:"s",m:`${result.reps.length} reps, ${result.cats.length} categories — $${fmtShort(total)} total`});
+    }catch(err){setSt({t:"e",m:err.message})}};
+    if(f.name.endsWith(".csv")||f.name.endsWith(".txt"))rd.readAsText(f);else rd.readAsArrayBuffer(f);
+  },[onUpload]);
+  const stC={e:["#2d1215","#ef4444","#7f1d1d"],l:["#2d2305","#f59e0b","#78350f"],s:["#052e16","#10b981","#064e3b"]};
+  return(
+    <div style={{marginBottom:12}}>
+      <div onClick={()=>ref.current&&ref.current.click()} style={{border:"2px dashed var(--card-border)",borderRadius:10,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--card)",cursor:"pointer"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:30,height:30,borderRadius:8,background:"rgba(245,158,11,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>📋</div>
+          <div><div style={{fontSize:12,fontWeight:600}}>Drop Weekly Orders CSV/Excel</div><div style={{fontSize:9,color:"var(--text-dim)"}}>Sections: REPS + CATEGORY with TOTAL SALES</div></div>
+        </div>
+        <div className="mono" style={{fontSize:10,color:"var(--gold)"}}>{weekLabel}</div>
+        <input ref={ref} type="file" accept=".csv,.xlsx,.xls,.txt" style={{display:"none"}} onChange={e=>handle(e.target.files[0])}/>
+      </div>
+      {st&&<div style={{marginTop:6,padding:"8px 14px",borderRadius:8,background:stC[st.t][0],border:`1px solid ${stC[st.t][2]}`,fontSize:11,color:stC[st.t][1]}}>{st.m}</div>}
+    </div>
+  );
+}
+
+function UploadBar({onUpload, asOf}) {
+  const ref=useRef(null);const[drag,setDrag]=useState(false);const[st,setSt]=useState(null);
+  const handle=useCallback(f=>{
+    if(!f)return;if(!f.name.endsWith(".csv")){setSt({t:"e",m:"Upload a .csv file"});return}
+    setSt({t:"l",m:`Parsing ${f.name}...`});
+    const rd=new FileReader();rd.onload=e=>{try{const{rows,parsed,skipped}=parseCSV(e.target.result);
+    if(!parsed){setSt({t:"e",m:"No valid rows. Check headers."});return}
+    const r=aggregate(rows);onUpload(r);setSt({t:"s",m:`${parsed.toLocaleString()} rows loaded — data as of ${r.as_of_date}`})}catch(err){setSt({t:"e",m:err.message})}};rd.readAsText(f);
+  },[onUpload]);
+  const stC={e:["#2d1215","#ef4444","#7f1d1d"],l:["#2d2305","#f59e0b","#78350f"],s:["#052e16","#10b981","#064e3b"]};
+  return(
+    <div style={{marginBottom:16}}>
+      <div onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);handle(e.dataTransfer.files[0])}} onClick={()=>ref.current&&ref.current.click()}
+        style={{border:`2px dashed ${drag?"var(--blue)":"var(--card-border)"}`,borderRadius:12,padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",background:drag?"var(--blue-dim)":"var(--card)",cursor:"pointer",transition:"all .15s"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:36,height:36,borderRadius:10,background:"var(--blue-dim)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>📤</div>
+          <div><div style={{fontSize:13,fontWeight:600}}>Drop new World Sales CSV</div><div style={{fontSize:10,color:"var(--text-dim)"}}>Budgets locked • Client-side only</div></div>
+        </div>
+        <div className="mono" style={{fontSize:11,color:"var(--text-dim)"}}>{asOf}</div>
+        <input ref={ref} type="file" accept=".csv" style={{display:"none"}} onChange={e=>handle(e.target.files[0])}/>
+      </div>
+      {st&&<div style={{marginTop:6,padding:"8px 14px",borderRadius:8,fontSize:11,background:stC[st.t][0],color:stC[st.t][1],border:`1px solid ${stC[st.t][2]}`}}>{st.m}</div>}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   TAB 1: SCOREBOARD
+   ══════════════════════════════════════════════════════════════════ */
+function Scoreboard({data,ccy,masterTeam,weeklyOrders}) {
+  const [sbRegion,setSbRegion]=useState("global");
+
+  const isEliteRep=(n)=>ELITE_REPS.has(n);
+  const teamFilt=(list)=>{
+    if(masterTeam==="all")return list;
+    if(masterTeam==="elite")return list.filter(r=>isEliteRep(r.rep));
+    return list.filter(r=>!isEliteRep(r.rep));
+  };
+
+  const glob=data.d1.find(r=>r.region==="GLOBAL");
+  const allRegions=data.d1.filter(r=>r.region!=="GLOBAL");
+  const canRow=data.d1.find(r=>r.region==="CAN")||{shipped:0,open:0,total:0,budget:0,pct:null};
+  const usaRow=data.d1.find(r=>r.region==="USA")||{shipped:0,open:0,total:0,budget:0,pct:null};
+  const euRow=data.d1.find(r=>r.region==="Europe/ROW")||{shipped:0,open:0,total:0,budget:0,pct:null};
+  const naTotal={region:"NA",shipped:canRow.shipped+usaRow.shipped,open:canRow.open+usaRow.open,total:canRow.total+usaRow.total,budget:canRow.budget+usaRow.budget,pct:canRow.budget+usaRow.budget>0?Math.round((canRow.total+usaRow.total)/(canRow.budget+usaRow.budget)*1000)/10:null};
+
+  const hero=sbRegion==="global"?glob:sbRegion==="na"?naTotal:euRow;
+
+  // When team filter active, recompute hero from rep-level data for accurate budgets
+  const teamHero=useMemo(()=>{
+    if(masterTeam==="all")return null;
+    const na=teamFilt(data.d4);const eu=teamFilt(data.d6);
+    const naT=na.reduce((s,r)=>s+r.total,0);const naB=na.reduce((s,r)=>s+(r.budget||0),0);
+    const euT=eu.reduce((s,r)=>s+r.total,0);const euB=eu.reduce((s,r)=>s+(r.budget||0),0);
+    const tot=naT+euT;const bud=naB+euB;
+    return{
+      global:{region:"GLOBAL",total:tot,shipped:0,open:0,budget:bud,pct:bud>0?Math.round(tot/bud*1000)/10:null},
+      na:{region:"NA",total:naT,shipped:0,open:0,budget:naB,pct:naB>0?Math.round(naT/naB*1000)/10:null},
+      eu:{region:"Europe/ROW",total:euT,shipped:0,open:0,budget:euB,pct:euB>0?Math.round(euT/euB*1000)/10:null}
+    };
+  },[masterTeam,data.d4,data.d6]);
+
+  const heroFinal=teamHero?(sbRegion==="global"?teamHero.global:sbRegion==="na"?teamHero.na:teamHero.eu):hero;
+
+  // Filtered weekly reps for team toggle
+  const fWeekReps=useMemo(()=>{
+    if(!weeklyOrders||!weeklyOrders.reps.length)return[];
+    let list=weeklyOrders.reps.filter(r=>r.total>0);
+    if(masterTeam==="retail")list=list.filter(r=>!isEliteRep(r.rep));
+    if(masterTeam==="elite")list=list.filter(r=>isEliteRep(r.rep));
+    return list.sort((a,b)=>b.total-a.total);
+  },[weeklyOrders,masterTeam]);
+
+  // EU sub-region aggregation from d6
+  const euSubRegions=useMemo(()=>{
+    const subs={};
+    Object.keys(EU_SUB).forEach(k=>{subs[k]={region:k,shipped:0,open:0,total:0,budget:0,pct:null}});
+    (data.d6||[]).forEach(r=>{
+      const sub=getEUSub(r.rep);
+      subs[sub].total+=r.total||0;
+      if(r.budget)subs[sub].budget+=r.budget;
+    });
+    Object.values(subs).forEach(s=>{if(s.budget>0)s.pct=Math.round(s.total/s.budget*1000)/10});
+    return Object.values(subs);
+  },[data.d6]);
+
+  const gauges=sbRegion==="global"?allRegions:sbRegion==="na"?[canRow,usaRow,data.d1.find(r=>r.region==="DTC")||{region:"DTC",shipped:0,open:0,total:0,budget:0,pct:null}]:euSubRegions;
+
+
+  const chLabels=data.d2.map(c=>c.channel);
+  const chData=data.d2.map(c=>c.total);
+  const chColors=["#3b82f6","#22d3ee","#8b5cf6","#f59e0b","#64748b"];
+  const catLabels=data.category_mix.map(c=>c.category);
+  const catData=data.category_mix.map(c=>c.total);
+  const catColors=["#3b82f6","#22d3ee","#10b981","#8b5cf6","#f59e0b"];
+  const trendLabels=data.weekly_trend.map(w=>w.week.replace(/^\d{4}-/,""));
+  const trendNA=data.weekly_trend.map(w=>w.na);
+  const trendEU=data.weekly_trend.map(w=>w.eu);
+
+  const regionLabel=sbRegion==="global"?"Global":sbRegion==="na"?"North America":"EU / ROW";
+
+  const TogBtn=({active,onClick,children,color})=>(
+    <button onClick={onClick} style={{padding:"5px 12px",borderRadius:8,background:active?(color||"var(--blue)"):"var(--card)",border:active?"none":"1px solid var(--card-border)",color:active?"#fff":"var(--text-dim)",fontSize:11,fontWeight:700,transition:"all .15s"}}>{children}</button>
+  );
+
+  return (
+    <div className="fade-up">
+      {/* ── TOGGLES ── */}
+      <div style={{display:"flex",gap:16,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+        <div style={{display:"flex",gap:4,alignItems:"center"}}>
+          <span style={{fontSize:11,fontWeight:700,color:"var(--text-dim)",marginRight:4}}>Region:</span>
+          <TogBtn active={sbRegion==="global"} onClick={()=>setSbRegion("global")}>🌎 Global</TogBtn>
+          <TogBtn active={sbRegion==="na"} onClick={()=>setSbRegion("na")}>🇨🇦🇺🇸 NA</TogBtn>
+          <TogBtn active={sbRegion==="eu"} onClick={()=>setSbRegion("eu")}>🇪🇺 EU</TogBtn>
+        </div>
+      </div>
+
+      {/* HERO */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:24,marginBottom:20,alignItems:"center"}}>
+        <div>
+          <div style={{fontSize:11,color:"var(--blue)",textTransform:"uppercase",letterSpacing:3,fontWeight:700,marginBottom:4}}>FY2026 Year-to-Date — {regionLabel}</div>
+          <div className="mono" style={{fontSize:42,fontWeight:900,background:"linear-gradient(135deg,#60a5fa,#22d3ee)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>{fmt(heroFinal.total,ccy)}</div>
+          <div style={{display:"flex",gap:20,marginTop:8}}>
+            <span style={{fontSize:12,color:"var(--text-dim)"}}>Shipped: <span className="mono" style={{color:"var(--text)"}}>{fmt(heroFinal.shipped,ccy)}</span></span>
+            <span style={{fontSize:12,color:"var(--text-dim)"}}>Open: <span className="mono" style={{color:"var(--text)"}}>{fmt(heroFinal.open,ccy)}</span></span>
+          </div>
+        </div>
+        <Gauge value={heroFinal.pct} size={160} stroke={14} label="To Budget" sub={heroFinal.budget>0?`Budget: ${fmt(heroFinal.budget,ccy)}`:null}/>
+      </div>
+
+      {/* REGION GAUGES */}
+      <div style={{display:"grid",gridTemplateColumns:`repeat(${gauges.length},1fr)`,gap:12,marginBottom:20}}>
+        {gauges.map(r=>(
+          <div key={r.region} className="card" style={{padding:"16px 12px",textAlign:"center"}}>
+            <Gauge value={r.pct} size={100} stroke={10}/>
+            <div style={{fontSize:13,fontWeight:700,marginTop:4}}>{r.region}</div>
+            <div style={{fontSize:9,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:1,marginTop:6}}>Forecast</div>
+            <div className="mono" style={{fontSize:13,color:"var(--text-dim)"}}>{r.budget>0?fmt(r.budget,ccy):"N/A"}</div>
+            <div style={{fontSize:9,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:1,marginTop:4}}>YTD Revenue</div>
+            <div className="mono" style={{fontSize:14,fontWeight:700,color:"var(--blue)"}}>{fmt(r.total,ccy)}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* WEEKLY INCOMING ORDERS */}
+      {fWeekReps.length>0&&(
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
+          <div className="card">
+            <div className="card-head" style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 20px 10px"}}>
+              <div><div className="card-title">🔥 Incoming Orders — By Rep</div><div style={{fontSize:12,fontWeight:700,color:"#fff",marginTop:2}}>{weeklyOrders.week_label}</div></div>
+              <div className="mono" style={{fontSize:20,fontWeight:900,color:"var(--gold)"}}>{fmt(fWeekReps.reduce((s,r)=>s+r.total,0),ccy)}</div>
+            </div>
+            <div className="card-body" style={{maxHeight:360,overflowY:"auto"}}>
+              {fWeekReps.map((r,i)=>{
+                const max=fWeekReps[0]?fWeekReps[0].total||1:1;
+                return(
+                  <div key={r.rep} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:i<fWeekReps.length-1?"1px solid var(--card-border)":"none"}}>
+                    <div style={{width:22,height:22,borderRadius:11,background:i<3?medalCol(i):"var(--card-border)",color:i<3?"#000":"var(--text-dim)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800,flexShrink:0}}>{i+1}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:11,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.rep}</div>
+                      <div style={{background:"var(--card-border)",borderRadius:3,height:4,marginTop:3,overflow:"hidden"}}>
+                        <div style={{height:"100%",borderRadius:3,background:i===0?"var(--gold)":i<3?"var(--blue)":"var(--blue-dim)",width:`${Math.min(r.total/max*100,100)}%`,transition:"width .8s"}}/>
+                      </div>
+                    </div>
+                    <div className="mono" style={{fontSize:12,fontWeight:700,color:i===0?"var(--gold)":"var(--text)",flexShrink:0}}>{fmt(r.total,ccy)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="card">
+            <div className="card-head"><div className="card-title">📦 Incoming Orders — By Category</div><div style={{fontSize:12,fontWeight:700,color:"#fff",marginTop:2}}>{weeklyOrders.week_label}</div></div>
+            <div className="card-body">
+              {weeklyOrders.cats.length>0?(
+                <>{weeklyOrders.cats.map((c,i)=>{
+                  const max=weeklyOrders.cats[0].total||1;
+                  const catC=["#3b82f6","#22d3ee","#10b981","#8b5cf6","#f59e0b","#ef4444","#64748b","#a78bfa","#f472b6"][i%9];
+                  return(
+                    <div key={c.cat} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<weeklyOrders.cats.length-1?"1px solid var(--card-border)":"none"}}>
+                      <div style={{width:10,height:10,borderRadius:5,background:catC,flexShrink:0}}/>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:700}}>{c.cat}</div>
+                        <div style={{background:"var(--card-border)",borderRadius:3,height:5,marginTop:3,overflow:"hidden"}}>
+                          <div style={{height:"100%",borderRadius:3,background:catC,opacity:.7,width:`${Math.min(c.total/max*100,100)}%`,transition:"width .8s"}}/>
+                        </div>
+                      </div>
+                      <div className="mono" style={{fontSize:13,fontWeight:700,flexShrink:0}}>{fmt(c.total,ccy)}</div>
+                    </div>
+                  );
+                })}</>
+              ):<div style={{padding:16,color:"var(--text-muted)",fontSize:12,textAlign:"center"}}>No category data — include CATEGORY section in upload</div>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ 3 STARS OF THE WEEK */}
+      {fWeekReps.length>=3&&(
+        <div className="card" style={{marginBottom:16,overflow:"hidden"}}>
+          <div style={{background:"linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%)",padding:"20px 24px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+              <div>
+                <div style={{fontSize:18,fontWeight:900,color:"#fff",letterSpacing:-.3}}>⭐ 3 Stars of the Week</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:2}}>{weeklyOrders.week_label} — Top incoming orders</div>
+              </div>
+              <div className="mono" style={{fontSize:22,fontWeight:900,color:"var(--gold)"}}>{fmt(fWeekReps.slice(0,3).reduce((s,r)=>s+r.total,0),ccy)}</div>
+            </div>
+          </div>
+          <div className="card-body" style={{padding:"0"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:0}}>
+              {fWeekReps.slice(0,3).map((r,i)=>{
+                const starIcons=["⭐","⭐⭐","⭐⭐⭐"];
+                const starLabels=["1ST STAR","2ND STAR","3RD STAR"];
+                const starBg=[
+                  "linear-gradient(180deg,rgba(245,158,11,0.12) 0%,transparent 100%)",
+                  "linear-gradient(180deg,rgba(148,163,184,0.1) 0%,transparent 100%)",
+                  "linear-gradient(180deg,rgba(180,83,9,0.08) 0%,transparent 100%)"
+                ];
+                const starBorder=i<2?"1px solid var(--card-border)":"none";
+                return(
+                  <div key={r.rep} style={{padding:"20px 18px",background:starBg[i],borderRight:starBorder,textAlign:"center"}}>
+                    <div style={{fontSize:i===0?28:22,marginBottom:6}}>{starIcons[i]}</div>
+                    <div style={{fontSize:9,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:2,fontWeight:700,marginBottom:6}}>{starLabels[i]}</div>
+                    <div style={{fontSize:i===0?16:14,fontWeight:800,color:i===0?"var(--gold)":"var(--text)",marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.rep}</div>
+                    <div className="mono" style={{fontSize:i===0?22:18,fontWeight:900,color:i===0?"var(--gold)":"var(--text)"}}>{fmt(r.total,ccy)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CHARTS ROW */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
+        <div className="card">
+          <div className="card-head"><div className="card-title">Channel Mix</div><div className="card-sub">{sbRegion==="eu"?"EU sub-region":"NA"} revenue</div></div>
+          <div className="card-body">{sbRegion==="eu"?(()=>{
+            const subs={};Object.keys(EU_SUB).forEach(k=>{subs[k]=0});
+            (data.d6||[]).forEach(r=>{subs[getEUSub(r.rep)]+=r.total||0});
+            const labels=Object.keys(subs);const vals=labels.map(k=>subs[k]);const cols=labels.map(k=>EU_SUB_COLORS[k]);
+            return <DoughnutChart labels={labels} data={vals} colors={cols}/>;
+          })():<DoughnutChart labels={chLabels} data={chData} colors={chColors}/>}</div>
+        </div>
+        <div className="card">
+          <div className="card-head"><div className="card-title">Category Mix</div><div className="card-sub">Revenue by product</div></div>
+          <div className="card-body"><DoughnutChart labels={catLabels} data={catData} colors={catColors}/></div>
+        </div>
+      </div>
+
+      {/* TREND LINE */}
+      <div className="card" style={{marginBottom:16}}>
+        <div className="card-head"><div className="card-title">📈 Weekly Sales Trend</div><div className="card-sub">Last 12 weeks • NA vs EU</div></div>
+        <div className="card-body">
+          <LineChart labels={trendLabels} datasets={[
+            {label:"NA",data:trendNA,borderColor:"#3b82f6",backgroundColor:"rgba(59,130,246,0.08)",pointBackgroundColor:"#3b82f6"},
+            {label:"EU",data:trendEU,borderColor:"#22d3ee",backgroundColor:"rgba(34,211,238,0.08)",pointBackgroundColor:"#22d3ee"}
+          ]} height={220}/>
+        </div>
+      </div>
+
+      {/* CATEGORY PERFORMANCE VS BUDGET */}
+      {(()=>{
+        const catColorsMap={"Sticks":"#3b82f6","Custom Skates":"#22d3ee","Stock Skates":"#10b981","Custom Goalie":"#8b5cf6","Stock Goalie":"#f59e0b"};
+        const catBudgetTotals={};
+        Object.keys(CAT_BUDGETS).forEach(function(rep){Object.keys(CAT_BUDGETS[rep]).forEach(function(cat){catBudgetTotals[cat]=(catBudgetTotals[cat]||0)+CAT_BUDGETS[rep][cat]})});
+        return(
+          <div className="card">
+            <div className="card-head"><div className="card-title">📦 Product Category Performance vs Budget</div><div className="card-sub">NA — YTD (Shipped + Open) vs Annual Budget</div></div>
+            <div className="card-body">
+              {data.category_mix.map((cm,idx)=>{
+                const bud=catBudgetTotals[cm.category]||0;
+                const pct=bud>0?Math.round(cm.total/bud*1000)/10:null;
+                return(
+                  <div key={cm.category} style={{padding:"12px 0",borderBottom:idx<data.category_mix.length-1?"1px solid var(--card-border)":"none"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <div style={{width:10,height:10,borderRadius:5,background:catColorsMap[cm.category]||"#64748b"}}/>
+                        <span style={{fontSize:14,fontWeight:700}}>{cm.category}</span>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:16}}>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{fontSize:9,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:1}}>YTD</div>
+                          <div className="mono" style={{fontSize:14,fontWeight:700}}>{fmt(cm.total,ccy)}</div>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{fontSize:9,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:1}}>Budget</div>
+                          <div className="mono" style={{fontSize:14,fontWeight:600,color:"var(--text-dim)"}}>{bud>0?fmt(bud,ccy):"N/A"}</div>
+                        </div>
+                        <div style={{background:pct===null?"var(--card-border)":pct>=50?"rgba(16,185,129,0.15)":pct>=35?"rgba(245,158,11,0.15)":"rgba(239,68,68,0.15)",border:`1px solid ${pctCol(pct)}33`,borderRadius:8,padding:"6px 12px",minWidth:64,textAlign:"center"}}>
+                          <div className="mono" style={{fontSize:18,fontWeight:800,color:pctCol(pct)}}>{pct!=null?`${pct}%`:"N/A"}</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{background:"var(--card-border)",borderRadius:4,height:8,overflow:"hidden"}}>
+                      <div style={{height:"100%",borderRadius:4,background:`linear-gradient(90deg,${catColorsMap[cm.category]||"#64748b"},${catColorsMap[cm.category]||"#64748b"}aa)`,width:`${pct!=null?Math.min(pct/100*100,100):0}%`,transition:"width 1s"}}/>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   TAB 2: LEADERBOARDS
+   ══════════════════════════════════════════════════════════════════ */
+function Leaderboards({data,ccy,masterTeam,weeklyOrders}) {
+  const [region,setRegion]=useState("NA");
+
+  const isEliteRep=(n)=>ELITE_REPS.has(n);
+  const tf=(list)=>{
+    if(masterTeam==="all")return list;
+    if(masterTeam==="elite")return list.filter(r=>isEliteRep(r.rep));
+    return list.filter(r=>!isEliteRep(r.rep));
+  };
+
+  // Region-filtered reps
+  const reps=useMemo(()=>{
+    const na=tf(data.d4).map(r=>({...r,_eu:false}));
+    const eu=tf(data.d6).map(r=>({...r,_eu:true}));
+    if(region==="ALL")return[...na,...eu];
+    if(region==="EU")return eu;
+    if(region==="CAN")return na.filter(r=>r.ca);
+    if(region==="USA")return na.filter(r=>!r.ca);
+    return na;
+  },[data,masterTeam,region]);
+
+  // S1: This Week — apply team filter
+  const weekReps=useMemo(()=>{
+    if(!weeklyOrders||!weeklyOrders.reps.length)return[];
+    let list=weeklyOrders.reps.filter(r=>r.total>0);
+    if(masterTeam==="retail")list=list.filter(r=>!isEliteRep(r.rep));
+    if(masterTeam==="elite")list=list.filter(r=>isEliteRep(r.rep));
+    return list.sort((a,b)=>b.total-a.total);
+  },[weeklyOrders,masterTeam]);
+  const weekTotal=weekReps.reduce((s,r)=>s+r.total,0);
+
+  // S2: Pace to Budget
+  const paceReps=useMemo(()=>[...reps].filter(r=>r.hb&&r.pct!=null).sort((a,b)=>b.pct-a.pct),[reps]);
+
+  // S3: Gross Margin
+  const gmReps=useMemo(()=>[...reps].filter(r=>r.gm!=null&&r.total>25000).sort((a,b)=>(b.gm||0)-(a.gm||0)),[reps]);
+
+  // S4: YTD Revenue
+  const revReps=useMemo(()=>[...reps].filter(r=>r.total>0).sort((a,b)=>b.total-a.total),[reps]);
+
+  const regionLabel=region==="ALL"?"🌍 Global":region==="EU"?"🇪🇺 Europe":region==="CAN"?"🇨🇦 Canada":region==="USA"?"🇺🇸 USA":"🇨🇦🇺🇸 North America";
+
+  const TogBtn=({active,onClick,children})=>(
+    <button onClick={onClick} style={{padding:"7px 18px",borderRadius:8,background:active?"var(--blue)":"var(--card)",border:active?"none":"1px solid var(--card-border)",color:active?"#fff":"var(--text-dim)",fontSize:12,fontWeight:700,transition:"all .15s"}}>{children}</button>
+  );
+
+  const gmColor=(gm)=>gm>=50?"var(--green)":gm>=40?"var(--gold)":"var(--red)";
+
+  // Shared rank row
+  const RepRow=({r,i,primary,primaryColor,secondary,barPct,barColor,highlight})=>(
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:i===0&&highlight?"12px 0 10px":"7px 0",borderBottom:"1px solid var(--card-border)"}}>
+      <div style={{width:i===0&&highlight?34:26,height:i===0&&highlight?34:26,borderRadius:"50%",background:i<3?medalCol(i):"var(--card-border)",color:i<3?"#000":"var(--text-dim)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:i===0&&highlight?14:10,fontWeight:800,flexShrink:0,boxShadow:i===0&&highlight?"0 0 12px rgba(245,158,11,0.35)":"none"}}>{i+1}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+          <span style={{fontSize:i===0&&highlight?16:13,fontWeight:i===0&&highlight?900:700,color:i===0&&highlight?"var(--gold)":"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.rep}</span>
+          {isEliteRep(r.rep)&&<span style={{fontSize:8,color:"#a78bfa",fontWeight:700}}>ELITE</span>}
+          {r.ca===true&&<span style={{fontSize:8,color:"var(--cyan)",fontWeight:700}}>CA</span>}
+          {r._eu&&<span style={{fontSize:8,color:"#a78bfa",fontWeight:700}}>EU</span>}
+          {r.ca===false&&!r._eu&&r.hb!==undefined&&<span style={{fontSize:8,color:"var(--text-muted)"}}>US</span>}
+        </div>
+        <div style={{background:"var(--card-border)",borderRadius:3,height:i===0&&highlight?8:5,overflow:"hidden"}}>
+          <div style={{height:"100%",borderRadius:3,background:barColor||(i===0?"linear-gradient(90deg,var(--gold),#fbbf24)":i<3?"linear-gradient(90deg,var(--blue),var(--cyan))":"var(--blue-dim)"),width:`${Math.min(barPct||0,100)}%`,transition:"width .8s"}}/>
+        </div>
+      </div>
+      <div style={{textAlign:"right",flexShrink:0,minWidth:90}}>
+        <div className="mono" style={{fontSize:i===0&&highlight?20:15,fontWeight:800,color:primaryColor||(i===0?"var(--gold)":"var(--text)"),lineHeight:1}}>{primary}</div>
+        {secondary&&<div className="mono" style={{fontSize:9,color:"var(--text-muted)",marginTop:2}}>{secondary}</div>}
+      </div>
+    </div>
+  );
+
+  return(
+    <div className="fade-up">
+      {/* ── REGION TOGGLE ── */}
+      <div style={{display:"flex",gap:6,marginBottom:20,alignItems:"center"}}>
+        {[["NA","🇨🇦🇺🇸 NA"],["ALL","🌍 Global"],["EU","🇪🇺 EU"],["USA","🇺🇸 USA"],["CAN","🇨🇦 CAN"]].map(([v,l])=>(
+          <TogBtn key={v} active={region===v} onClick={()=>setRegion(v)}>{l}</TogBtn>
+        ))}
+      </div>
+
+      {/* ═══════════════ S1: THIS WEEK ═══════════════ */}
+      <div className="card" style={{marginBottom:20,overflow:"hidden"}}>
+        <div style={{background:"linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%)",padding:"18px 24px 14px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:18,fontWeight:900,color:"#fff"}}>🔥 This Week — Incoming Orders</div>
+              <div style={{fontSize:12,fontWeight:700,color:"#fff",marginTop:3,opacity:.85}}>{weeklyOrders?weeklyOrders.week_label:"No weekly data uploaded"}</div>
+            </div>
+            <div className="mono" style={{fontSize:28,fontWeight:900,color:"var(--gold)"}}>{fmt(weekTotal,ccy)}</div>
+          </div>
+        </div>
+        <div className="card-body" style={{maxHeight:480,overflowY:"auto"}}>
+          {weekReps.length>0?weekReps.map((r,i)=>(
+            <RepRow key={r.rep} r={r} i={i} highlight
+              primary={fmt(r.total,ccy)}
+              barPct={weekReps[0]?r.total/weekReps[0].total*100:0}
+            />
+          )):<div style={{padding:20,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>Upload weekly orders CSV to populate this section</div>}
+        </div>
+      </div>
+
+      {/* ═══════════════ S2: PACE TO BUDGET ═══════════════ */}
+      <div className="card" style={{marginBottom:20}}>
+        <div className="card-head" style={{padding:"16px 24px 12px"}}>
+          <div className="card-title" style={{fontSize:17}}>🏅 YTD Race — Pace to Budget</div>
+          <div className="card-sub">{regionLabel} • {paceReps.length} budgeted reps</div>
+        </div>
+        <div className="card-body" style={{maxHeight:500,overflowY:"auto"}}>
+          {paceReps.map((r,i)=>(
+            <RepRow key={r.rep} r={r} i={i} highlight={false}
+              primary={`${r.pct}%`}
+              primaryColor={pctCol(r.pct)}
+              secondary={`${fmt(r.total,ccy)} of ${fmt(r.budget,ccy)}`}
+              barPct={Math.min(r.pct/80*100,100)}
+              barColor={`linear-gradient(90deg,${pctCol(r.pct)},${pctCol(r.pct)}aa)`}
+            />
+          ))}
+          {paceReps.length===0&&<div style={{padding:20,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No budgeted reps for this region</div>}
+        </div>
+      </div>
+
+      {/* ═══════════════ S3: GROSS MARGIN ═══════════════ */}
+      <div className="card" style={{marginBottom:20}}>
+        <div className="card-head" style={{padding:"16px 24px 12px"}}>
+          <div className="card-title" style={{fontSize:17}}>📈 Gross Margin Performance</div>
+          <div className="card-sub">{regionLabel} • min $25K revenue • {gmReps.length} reps</div>
+        </div>
+        <div className="card-body" style={{maxHeight:500,overflowY:"auto"}}>
+          {gmReps.map((r,i)=>(
+            <RepRow key={r.rep} r={r} i={i} highlight={false}
+              primary={`${r.gm}%`}
+              primaryColor={gmColor(r.gm)}
+              secondary={fmt(r.total,ccy)}
+              barPct={r.gm}
+              barColor={`linear-gradient(90deg,${gmColor(r.gm)},${gmColor(r.gm)}aa)`}
+            />
+          ))}
+          {gmReps.length===0&&<div style={{padding:20,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No reps meet the minimum threshold</div>}
+        </div>
+      </div>
+
+      {/* ═══════════════ S4: YTD REVENUE ═══════════════ */}
+      <div className="card" style={{marginBottom:20}}>
+        <div className="card-head" style={{padding:"16px 24px 12px"}}>
+          <div className="card-title" style={{fontSize:17}}>💰 YTD Revenue</div>
+          <div className="card-sub">{regionLabel} • {revReps.length} reps • {fmt(revReps.reduce((s,r)=>s+r.total,0),ccy)} total</div>
+        </div>
+        <div className="card-body" style={{maxHeight:500,overflowY:"auto"}}>
+          {revReps.map((r,i)=>(
+            <RepRow key={r.rep} r={r} i={i} highlight={false}
+              primary={fmt(r.total,ccy)}
+              secondary={r.pct!=null?`${r.pct}% to budget`:null}
+              barPct={revReps[0]?r.total/revReps[0].total*100:0}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Weekly Category Breakdown */}
+      {weeklyOrders&&weeklyOrders.cats.length>0&&(
+        <div className="card">
+          <div className="card-head" style={{padding:"16px 24px 12px"}}>
+            <div className="card-title" style={{fontSize:17}}>📦 Weekly Orders — Category Breakdown</div>
+            <div className="card-sub">{weeklyOrders.week_label} • {weeklyOrders.cats.length} categories</div>
+          </div>
+          <div className="card-body">
+            {weeklyOrders.cats.map((c,i)=>{
+              const max=weeklyOrders.cats[0].total||1;
+              const total=weeklyOrders.cats.reduce((s,x)=>s+x.total,0);
+              const pct=total>0?Math.round(c.total/total*1000)/10:0;
+              const catC=["#3b82f6","#22d3ee","#10b981","#8b5cf6","#f59e0b","#ef4444","#64748b","#a78bfa","#f472b6"][i%9];
+              return(
+                <div key={c.cat} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:i<weeklyOrders.cats.length-1?"1px solid var(--card-border)":"none"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,width:160,flexShrink:0}}>
+                    <div style={{width:10,height:10,borderRadius:5,background:catC}}/>
+                    <span style={{fontSize:13,fontWeight:700}}>{c.cat}</span>
+                  </div>
+                  <div style={{flex:1,background:"var(--card-border)",borderRadius:4,height:8,overflow:"hidden"}}>
+                    <div style={{height:"100%",borderRadius:4,background:catC,opacity:.7,width:`${Math.min(c.total/max*100,100)}%`,transition:"width .8s"}}/>
+                  </div>
+                  <div className="mono" style={{fontSize:14,fontWeight:700,textAlign:"right",minWidth:90}}>{fmt(c.total,ccy)}</div>
+                  <div className="mono" style={{fontSize:11,color:"var(--text-dim)",minWidth:45,textAlign:"right"}}>{pct}%</div>
+                </div>
+              );
+            })}
+            <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0 0",borderTop:"2px solid var(--card-border)",marginTop:4}}>
+              <span style={{fontSize:14,fontWeight:800}}>Total</span>
+              <span className="mono" style={{fontSize:16,fontWeight:900,color:"var(--gold)"}}>{fmt(weeklyOrders.cats.reduce((s,c)=>s+c.total,0),ccy)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   TAB 3: WORK HORSE OF THE MONTH
+   ══════════════════════════════════════════════════════════════════ */
+function WorkHorse() {
+  const isAnnounced = WORKHORSE.name !== "To Be Announced";
+  return (
+    <div className="fade-up" style={{maxWidth:680,margin:"0 auto"}}>
+      <div style={{textAlign:"center",marginBottom:32}}>
+        <div style={{fontSize:48,marginBottom:8}}>🐎</div>
+        <div style={{fontSize:28,fontWeight:900,background:"linear-gradient(135deg,var(--gold),#fbbf24,var(--gold))",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",letterSpacing:-1}}>WORK HORSE OF THE MONTH</div>
+        <div style={{fontSize:13,color:"var(--text-dim)",marginTop:4,letterSpacing:1}}>{WORKHORSE.month}</div>
+      </div>
+
+      <div className="card glow-border" style={{border:"1px solid var(--gold-dim)",marginBottom:24}}>
+        <div style={{padding:"32px 28px",textAlign:"center",background:"linear-gradient(180deg,rgba(245,158,11,0.06),transparent)"}}>
+          {isAnnounced ? (
+            <>
+              <div style={{width:80,height:80,borderRadius:40,background:"linear-gradient(135deg,var(--gold),#fbbf24)",margin:"0 auto 16px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:36,boxShadow:"0 0 30px rgba(245,158,11,0.3)"}}>🏆</div>
+              <div style={{fontSize:28,fontWeight:800,color:"var(--gold)"}}>{WORKHORSE.name}</div>
+              <div style={{fontSize:14,color:"var(--text-dim)",marginTop:12,lineHeight:1.6,maxWidth:500,margin:"12px auto 0"}}>{WORKHORSE.blurb}</div>
+            </>
+          ) : (
+            <>
+              <div style={{width:80,height:80,borderRadius:40,background:"var(--card-border)",margin:"0 auto 16px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,animation:"pulse 2s infinite"}}>❓</div>
+              <div style={{fontSize:22,fontWeight:700,color:"var(--text-dim)"}}>To Be Announced</div>
+              <div style={{fontSize:13,color:"var(--text-muted)",marginTop:8}}>{WORKHORSE.blurb}</div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {WORKHORSE.hallOfFame.length > 0 && (
+        <div className="card">
+          <div className="card-head"><div className="card-title">🏛️ Hall of Fame</div></div>
+          <div className="card-body">
+            {WORKHORSE.hallOfFame.map((h,i) => (
+              <div key={i} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 0",borderBottom:i<WORKHORSE.hallOfFame.length-1?"1px solid var(--card-border)":"none"}}>
+                <div style={{width:36,height:36,borderRadius:18,background:"var(--gold-dim)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🏆</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:14,fontWeight:700,color:"var(--gold)"}}>{h.name}</div>
+                  <div style={{fontSize:11,color:"var(--text-dim)"}}>{h.month}{h.note?` — ${h.note}`:""}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   TAB 4: DEEP DIVE
+   ══════════════════════════════════════════════════════════════════ */
+function DeepDive({data,ccy,masterTeam}) {
+  const [view,setView]=useState("region");
+  const [regFilter,setRegFilter]=useState("NA");
+  const [catGroup,setCatGroup]=useState("all");
+  const [catSort,setCatSort]=useState("budget");
+  const [timeframe,setTimeframe]=useState("ytd");
+  const [selWeek,setSelWeek]=useState(()=>{const w=data.weekly_trend.map(x=>x.week);return w[w.length-1]||""});
+  const [selMonth,setSelMonth]=useState(()=>{const m=Object.keys(data.monthly_na||{}).sort();return m[m.length-1]||""});
+
+  const catalogCats=["Sticks","Stock Skates","Stock Goalie","Other"];
+  const customCats=["Custom Skates","Custom Goalie"];
+  const allCats=[...catalogCats,...customCats];
+  const catColors={"Sticks":"#3b82f6","Custom Skates":"#22d3ee","Stock Skates":"#10b981","Custom Goalie":"#8b5cf6","Stock Goalie":"#f59e0b","Other":"#94a3b8"};
+  const weeks=data.weekly_trend.map(w=>w.week);
+  const months=useMemo(()=>{const s=new Set([...Object.keys(data.monthly_na||{}),...Object.keys(data.monthly_eu||{})]);return[...s].sort()},[data]);
+
+  const gmColor=(gm)=>gm>=50?"var(--green)":gm>=40?"var(--gold)":"var(--red)";
+
+  // Build rep gm lookup from d4/d6
+  const repGM=useMemo(()=>{
+    const m={};
+    (data.d4||[]).forEach(r=>{if(r.gm!=null)m[r.rep]=r.gm});
+    (data.d6||[]).forEach(r=>{if(r.gm!=null)m[r.rep]=r.gm});
+    return m;
+  },[data.d4,data.d6]);
+
+  // Team filter helper — uses masterTeam from App
+  const isElite=(repName)=>ELITE_REPS.has(repName);
+  const teamFilter=(list)=>{
+    if(masterTeam==="all")return list;
+    if(masterTeam==="elite")return list.filter(r=>{const n=r.rep||r.name||"";return isElite(n)});
+    return list.filter(r=>{const n=r.rep||r.name||"";return!isElite(n)});
+  };
+
+  const TogBtn=({active,onClick,children,color})=>(
+    <button onClick={onClick} style={{padding:"6px 14px",borderRadius:8,background:active?(color||"var(--blue)"):"var(--card)",border:active?"none":"1px solid var(--card-border)",color:active?"#fff":"var(--text-dim)",fontSize:11,fontWeight:700,transition:"all .15s"}}>{children}</button>
+  );
+
+  // ─── Timeframe context ───
+  const selWeekData=data.weekly_trend.find(w=>w.week===selWeek);
+  const selMonthNA=useMemo(()=>(data.monthly_na||{})[selMonth]||[],[selMonth,data]);
+  const selMonthEU=useMemo(()=>(data.monthly_eu||{})[selMonth]||[],[selMonth,data]);
+  const monthTotal=useMemo(()=>{
+    const na=selMonthNA.reduce((s,r)=>s+r.total,0);
+    const eu=selMonthEU.reduce((s,r)=>s+r.total,0);
+    return{na,eu,total:na+eu};
+  },[selMonthNA,selMonthEU]);
+  const monthLabel=selMonth?new Date(selMonth+"-15").toLocaleDateString("en-US",{month:"short",year:"numeric"}):"";
+  const tfSummary=timeframe==="week"&&selWeekData?{na:selWeekData.na,eu:selWeekData.eu}:timeframe==="month"?{na:monthTotal.na,eu:monthTotal.eu}:null;
+
+  // ─── Shared rep row for category rankings ───
+  const CatRepRow=({e,i,color,mode})=>{
+    const gm=repGM[e.rep]||null;
+    const isGM=mode==="gm";
+    const isBud=mode==="budget";
+    const primaryVal=isGM?(gm!=null?`${gm}%`:"—"):isBud?(e.pct!=null?`${e.pct}%`:"—"):fmt(e.total,ccy);
+    const primaryColor=isGM?(gm!=null?gmColor(gm):"var(--text-dim)"):isBud?pctCol(e.pct):"var(--text)";
+    const secondaryVal=isGM?fmt(e.total,ccy):isBud?fmt(e.total,ccy):(e.pct!=null?`${e.pct}% to bud`:(gm!=null?`GM ${gm}%`:null));
+    const barVal=isGM?(gm||0):isBud?(e.pct||0):e.total;
+    const barMax=isGM?100:isBud?100:(e.total*1.3||1);
+    const elite=isElite(e.rep);
+    return(
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:"1px solid var(--card-border)"}}>
+        <div style={{width:22,height:22,borderRadius:11,background:i<3?medalCol(i):"var(--card-border)",color:i<3?"#000":"var(--text-dim)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800,flexShrink:0}}>{i+1}</div>
+        <div style={{width:160,flexShrink:0,overflow:"hidden"}}>
+          <div style={{fontSize:12,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.rep}</div>
+          <div style={{fontSize:9,color:"var(--text-muted)",display:"flex",gap:4}}>
+            {e.ca?<span style={{color:"var(--cyan)"}}>CA</span>:<span>US</span>}
+            {elite&&<span style={{color:"#a78bfa"}}>ELITE</span>}
+          </div>
+        </div>
+        <div style={{flex:1,background:"var(--card-border)",borderRadius:3,height:5,overflow:"hidden"}}>
+          <div style={{height:"100%",borderRadius:3,background:color,opacity:.7,width:`${Math.min(barVal/(barMax||1)*100,100)}%`,transition:"width .8s"}}/>
+        </div>
+        <div style={{textAlign:"right",flexShrink:0,minWidth:90}}>
+          <div className="mono" style={{fontSize:15,fontWeight:800,color:primaryColor,lineHeight:1}}>{primaryVal}</div>
+          {secondaryVal&&<div className="mono" style={{fontSize:9,color:"var(--text-muted)",marginTop:2}}>{secondaryVal}</div>}
+        </div>
+      </div>
+    );
+  };
+
+  // ═══════════════ REGION VIEW ═══════════════
+  const RegionView=()=>{
+    if(timeframe==="ytd"){
+      return(
+        <div>
+          <div className="card" style={{marginBottom:16}}>
+            <div className="card-head"><div className="card-title">Sales by Region — YTD</div><div className="card-sub">Shipped, Open, and Total</div></div>
+            <div className="card-body">
+              <BarChart labels={data.d1.map(r=>r.region)} datasets={[
+                {label:"Shipped",data:data.d1.map(r=>r.shipped),backgroundColor:"#3b82f6"},
+                {label:"Open",data:data.d1.map(r=>r.open),backgroundColor:"#1e3a6e"},
+                {label:"Total",data:data.d1.map(r=>r.total),backgroundColor:"#22d3ee"}
+              ]} height={280} showLabels/>
+            </div>
+          </div>
+          <div className="card">
+            <div className="card-head"><div className="card-title">Region Detail</div></div>
+            <div className="card-body">
+              <div style={{display:"grid",gridTemplateColumns:"100px 1fr 80px 80px 90px 55px",gap:8,padding:"0 0 8px",borderBottom:"2px solid var(--card-border)"}}>
+                {["Region","","Shipped","Open","Total","% Bud"].map((h,i)=>(
+                  <div key={h} style={{fontSize:9,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:1,textAlign:i>1?"right":"left",fontWeight:700}}>{h}</div>
+                ))}
+              </div>
+              {data.d1.map((r,i)=>(
+                <div key={r.region} style={{display:"grid",gridTemplateColumns:"100px 1fr 80px 80px 90px 55px",alignItems:"center",gap:8,padding:"8px 0",borderBottom:i<data.d1.length-1?"1px solid var(--card-border)":"none",fontWeight:r.region==="GLOBAL"?700:400}}>
+                  <div style={{fontSize:12,fontWeight:600}}>{r.region}</div>
+                  <div style={{background:"var(--card-border)",borderRadius:3,height:6,overflow:"hidden"}}><div style={{height:"100%",borderRadius:3,background:r.region==="GLOBAL"?"var(--text)":"var(--blue)",width:`${Math.min(r.total/data.d1[data.d1.length-1].total*100,100)}%`}}/></div>
+                  <div className="mono" style={{fontSize:11,textAlign:"right",color:"var(--text-dim)"}}>{fmt(r.shipped,ccy)}</div>
+                  <div className="mono" style={{fontSize:11,textAlign:"right",color:"var(--text-dim)"}}>{fmt(r.open,ccy)}</div>
+                  <div className="mono" style={{fontSize:12,textAlign:"right",fontWeight:600}}>{fmt(r.total,ccy)}</div>
+                  <div className="mono" style={{fontSize:12,fontWeight:700,color:pctCol(r.pct),textAlign:"right"}}>{r.pct!=null?`${r.pct}%`:"N/A"}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if(timeframe==="week"){
+      return(
+        <div>
+          <div className="card" style={{marginBottom:16}}>
+            <div className="card-head"><div className="card-title">Weekly Sales Trend</div><div className="card-sub">NA vs EU — last 12 weeks</div></div>
+            <div className="card-body">
+              <BarChart labels={weeks.map(w=>w.replace(/^\d{4}-/,""))} datasets={[
+                {label:"NA",data:data.weekly_trend.map(w=>w.na),backgroundColor:"#3b82f6"},
+                {label:"EU",data:data.weekly_trend.map(w=>w.eu),backgroundColor:"#22d3ee"},
+                {label:"Total",data:data.weekly_trend.map(w=>w.na+w.eu),backgroundColor:"#64748b"}
+              ]} height={280} showLabels/>
+            </div>
+          </div>
+          {selWeekData&&(
+            <div className="card">
+              <div className="card-head"><div className="card-title">Week {selWeek.replace(/^\d{4}-/,"")} Summary</div></div>
+              <div className="card-body">
+                <div style={{display:"grid",gridTemplateColumns:"100px 1fr 120px",gap:8,padding:"0 0 8px",borderBottom:"2px solid var(--card-border)"}}>
+                  {["Region","","Revenue"].map((h,i)=>(
+                    <div key={h} style={{fontSize:9,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:1,textAlign:i>1?"right":"left",fontWeight:700}}>{h}</div>
+                  ))}
+                </div>
+                {[{region:"NA",val:selWeekData.na},{region:"EU",val:selWeekData.eu},{region:"Total",val:selWeekData.na+selWeekData.eu}].map((r,i)=>(
+                  <div key={r.region} style={{display:"grid",gridTemplateColumns:"100px 1fr 120px",alignItems:"center",gap:8,padding:"10px 0",borderBottom:i<2?"1px solid var(--card-border)":"none",fontWeight:r.region==="Total"?700:400}}>
+                    <div style={{fontSize:13,fontWeight:600}}>{r.region}</div>
+                    <div style={{background:"var(--card-border)",borderRadius:3,height:6,overflow:"hidden"}}><div style={{height:"100%",borderRadius:3,background:r.region==="Total"?"var(--text)":"var(--blue)",width:`${Math.min(r.val/(selWeekData.na+selWeekData.eu)*100,100)}%`}}/></div>
+                    <div className="mono" style={{fontSize:14,textAlign:"right",fontWeight:700}}>{fmt(r.val,ccy)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Month view
+    return(
+      <div>
+        <div className="card" style={{marginBottom:16}}>
+          <div className="card-head"><div className="card-title">Monthly Sales Trend</div><div className="card-sub">Last 12 months — NA vs EU</div></div>
+          <div className="card-body">
+            {(()=>{
+              const recent=months.slice(-12);
+              const naVals=recent.map(m=>(data.monthly_na[m]||[]).reduce((s,r)=>s+r.total,0));
+              const euVals=recent.map(m=>(data.monthly_eu[m]||[]).reduce((s,r)=>s+r.total,0));
+              return <BarChart labels={recent.map(m=>m.replace(/^\d{4}-/,""))} datasets={[
+                {label:"NA",data:naVals,backgroundColor:"#3b82f6"},
+                {label:"EU",data:euVals,backgroundColor:"#22d3ee"},
+                {label:"Total",data:naVals.map((v,i)=>v+euVals[i]),backgroundColor:"#64748b"}
+              ]} height={280} showLabels/>;
+            })()}
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-head"><div className="card-title">{monthLabel} — Top Reps</div><div className="card-sub">NA: {fmt(monthTotal.na,ccy)} | EU: {fmt(monthTotal.eu,ccy)}</div></div>
+          <div className="card-body" style={{maxHeight:500,overflowY:"auto"}}>
+            <div style={{display:"grid",gridTemplateColumns:"40px 1fr 1fr 100px",gap:8,padding:"0 0 8px",borderBottom:"2px solid var(--card-border)"}}>
+              {["#","Rep","Region","Revenue"].map((h,i)=>(
+                <div key={h} style={{fontSize:9,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:1,textAlign:i>2?"right":"left",fontWeight:700}}>{h}</div>
+              ))}
+            </div>
+            {(()=>{
+              const combined=[...selMonthNA.map(r=>({...r,rg:"NA"})),...selMonthEU.map(r=>({...r,rg:"EU"}))].sort((a,b)=>b.total-a.total).slice(0,20);
+              return combined.map((r,i)=>(
+                <div key={r.rep+r.rg} style={{display:"grid",gridTemplateColumns:"40px 1fr 1fr 100px",alignItems:"center",gap:8,padding:"8px 0",borderBottom:i<combined.length-1?"1px solid var(--card-border)":"none"}}>
+                  <div style={{width:22,height:22,borderRadius:11,background:i<3?medalCol(i):"var(--card-border)",color:i<3?"#000":"var(--text-dim)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800}}>{i+1}</div>
+                  <div style={{fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.rep}</div>
+                  <div style={{fontSize:10,color:r.rg==="NA"?"var(--blue)":"var(--cyan)",fontWeight:600}}>{r.rg}</div>
+                  <div className="mono" style={{fontSize:13,textAlign:"right",fontWeight:700}}>{fmt(r.total,ccy)}</div>
+                </div>
+              ));
+            })()}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ═══════════════ CHANNEL VIEW ═══════════════
+  const ChannelView=()=>{
+    const isNA=regFilter==="NA";
+    if(isNA){
+      const chGM={};
+      (data.channel_margin||[]).forEach(c=>{chGM[c.channel]=c});
+      const channels=data.d2.map(c=>({...c,gm:(chGM[c.channel]||{}).gm||null}));
+      const chSorted=[...channels].sort((a,b)=>(b.gm||0)-(a.gm||0));
+      return(
+        <div>
+          <div className="card" style={{marginBottom:16}}>
+            <div className="card-head"><div className="card-title">NA Channel Performance</div><div className="card-sub">Shipped, Open, and Total — ranked by GM%</div></div>
+            <div className="card-body">
+              <BarChart labels={chSorted.map(c=>c.channel)} datasets={[
+                {label:"Shipped",data:chSorted.map(c=>c.shipped),backgroundColor:"#3b82f6"},
+                {label:"Open",data:chSorted.map(c=>c.open),backgroundColor:"#1e3a6e"},
+                {label:"Total",data:chSorted.map(c=>c.total),backgroundColor:"#22d3ee"}
+              ]} height={260} showLabels/>
+            </div>
+          </div>
+
+          <div className="card" style={{marginBottom:16}}>
+            <div className="card-head"><div className="card-title">Channel Detail — Ranked by GM%</div></div>
+            <div className="card-body">
+              <div style={{display:"grid",gridTemplateColumns:"130px 1fr 85px 85px 95px 65px",gap:6,padding:"0 0 8px",borderBottom:"2px solid var(--card-border)"}}>
+                {["Channel","","Shipped","Open","Total","GM%"].map((h,i)=>(
+                  <div key={h} style={{fontSize:9,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:1,textAlign:i>1?"right":"left",fontWeight:700}}>{h}</div>
+                ))}
+              </div>
+              {chSorted.map((c,i)=>(
+                <div key={c.channel} style={{display:"grid",gridTemplateColumns:"130px 1fr 85px 85px 95px 65px",gap:6,padding:"10px 0",borderBottom:i<chSorted.length-1?"1px solid var(--card-border)":"none",alignItems:"center"}}>
+                  <div style={{fontSize:13,fontWeight:700}}>{c.channel}</div>
+                  <div style={{background:"var(--card-border)",borderRadius:4,height:8,overflow:"hidden"}}>
+                    <div style={{height:"100%",borderRadius:4,background:c.gm!=null?gmColor(c.gm):"var(--text-dim)",width:`${c.gm!=null?Math.min(c.gm,100):0}%`,transition:"width .8s"}}/>
+                  </div>
+                  <div className="mono" style={{fontSize:11,textAlign:"right",color:"var(--text-dim)"}}>{fmt(c.shipped,ccy)}</div>
+                  <div className="mono" style={{fontSize:11,textAlign:"right",color:"var(--text-dim)"}}>{fmt(c.open,ccy)}</div>
+                  <div className="mono" style={{fontSize:12,textAlign:"right",fontWeight:700}}>{fmt(c.total,ccy)}</div>
+                  <div className="mono" style={{fontSize:13,textAlign:"right",fontWeight:800,color:c.gm!=null?gmColor(c.gm):"var(--text-dim)"}}>{c.gm!=null?`${c.gm}%`:"—"}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+            <div className="card">
+              <div className="card-head"><div className="card-title">Key Accounts</div></div>
+              <div className="card-body">{(data.d2_drill.ka||[]).map((a,i)=>(
+                <div key={a.name} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:i<data.d2_drill.ka.length-1?"1px solid var(--card-border)":"none"}}>
+                  <span style={{fontSize:11,color:"var(--text-dim)"}}>{a.name}</span><span className="mono" style={{fontSize:11,fontWeight:600}}>{fmt(a.total,ccy)}</span>
+                </div>
+              ))}</div>
+            </div>
+            <div className="card">
+              <div className="card-head"><div className="card-title">Specialty</div></div>
+              <div className="card-body">{(data.d2_drill.sp||[]).map((a,i)=>(
+                <div key={a.name} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:i<data.d2_drill.sp.length-1?"1px solid var(--card-border)":"none"}}>
+                  <span style={{fontSize:11,color:"var(--text-dim)"}}>{a.name}</span><span className="mono" style={{fontSize:11,fontWeight:600}}>{fmt(a.total,ccy)}</span>
+                </div>
+              ))}</div>
+            </div>
+          </div>
+        </div>
+      );
+    } else {
+      const euM=(data.channel_margin||[]).find(c=>c.channel==="EU");
+      // EU sub-region aggregation
+      const euSubs=useMemo(()=>{
+        const subs={};
+        Object.keys(EU_SUB).forEach(k=>{subs[k]={region:k,total:0,reps:[]}});
+        (data.d6||[]).forEach(r=>{
+          const sub=getEUSub(r.rep);
+          subs[sub].total+=r.total||0;
+          subs[sub].reps.push(r);
+        });
+        Object.values(subs).forEach(s=>{s.reps.sort((a,b)=>b.total-a.total)});
+        return Object.values(subs).sort((a,b)=>b.total-a.total);
+      },[data.d6]);
+      const euSubTotal=euSubs.reduce((s,r)=>s+r.total,0);
+      return(
+        <div>
+          {/* EU/ROW Tier Revenue — PRIMARY */}
+          <div className="card" style={{marginBottom:16}}>
+            <div className="card-head"><div className="card-title">EU/ROW Channel Revenue</div><div className="card-sub">{euM?`Overall GM: ${euM.gm}%`:"" } • Shipped, Open, and Total by Account Tier</div></div>
+            <div className="card-body">
+              <BarChart labels={data.d3.map(t=>t.tier)} datasets={[
+                {label:"Shipped",data:data.d3.map(t=>t.shipped),backgroundColor:"#22d3ee"},
+                {label:"Open",data:data.d3.map(t=>t.open),backgroundColor:"#0e7490"},
+                {label:"Total",data:data.d3.map(t=>t.total),backgroundColor:"#64748b"}
+              ]} height={260} showLabels/>
+            </div>
+          </div>
+
+          {/* Tier Detail table */}
+          <div className="card" style={{marginBottom:16}}>
+            <div className="card-head"><div className="card-title">Tier Detail</div></div>
+            <div className="card-body">
+              <div style={{display:"grid",gridTemplateColumns:"140px 1fr 90px 90px 100px",gap:6,padding:"0 0 8px",borderBottom:"2px solid var(--card-border)"}}>
+                {["Tier","","Shipped","Open","Total"].map((h,i)=>(
+                  <div key={h} style={{fontSize:9,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:1,textAlign:i>1?"right":"left",fontWeight:700}}>{h}</div>
+                ))}
+              </div>
+              {data.d3.map((t,i)=>(
+                <div key={t.tier} style={{display:"grid",gridTemplateColumns:"140px 1fr 90px 90px 100px",gap:6,padding:"10px 0",borderBottom:i<data.d3.length-1?"1px solid var(--card-border)":"none",alignItems:"center"}}>
+                  <div style={{fontSize:13,fontWeight:700}}>{t.tier}</div>
+                  <div style={{background:"var(--card-border)",borderRadius:4,height:8,overflow:"hidden"}}>
+                    <div style={{height:"100%",borderRadius:4,background:"#22d3ee",width:`${Math.min(t.total/(data.d3[0]||{total:1}).total*100,100)}%`}}/>
+                  </div>
+                  <div className="mono" style={{fontSize:12,textAlign:"right",color:"var(--text-dim)"}}>{fmt(t.shipped,ccy)}</div>
+                  <div className="mono" style={{fontSize:12,textAlign:"right",color:"var(--text-dim)"}}>{fmt(t.open,ccy)}</div>
+                  <div className="mono" style={{fontSize:13,textAlign:"right",fontWeight:700}}>{fmt(t.total,ccy)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Sub-Region breakdown — SECONDARY */}
+          <div className="card" style={{marginBottom:16}}>
+            <div className="card-head"><div className="card-title">Sub-Region Overview</div><div className="card-sub">{fmt(euSubTotal,ccy)} total across {euSubs.length} sub-regions</div></div>
+            <div className="card-body">
+              <BarChart labels={euSubs.map(s=>s.region)} datasets={[
+                {label:"Revenue",data:euSubs.map(s=>s.total),backgroundColor:euSubs.map(s=>EU_SUB_COLORS[s.region]||"#64748b")}
+              ]} height={200} showLabels/>
+            </div>
+          </div>
+
+          {/* Sub-region rep cards */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+            {euSubs.map(sub=>(
+              <div key={sub.region} className="card">
+                <div className="card-head" style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 20px 10px"}}>
+                  <div>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{width:10,height:10,borderRadius:5,background:EU_SUB_COLORS[sub.region]}}/>
+                      <div className="card-title" style={{fontSize:15}}>{sub.region}</div>
+                    </div>
+                    <div className="card-sub">{sub.reps.length} reps</div>
+                  </div>
+                  <div className="mono" style={{fontSize:16,fontWeight:800}}>{fmt(sub.total,ccy)}</div>
+                </div>
+                <div className="card-body">
+                  {sub.reps.map((r,i)=>(
+                    <div key={r.rep} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:i<sub.reps.length-1?"1px solid var(--card-border)":"none"}}>
+                      <div style={{width:22,height:22,borderRadius:11,background:i<3?medalCol(i):"var(--card-border)",color:i<3?"#000":"var(--text-dim)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800}}>{i+1}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.rep}</div>
+                        <div style={{background:"var(--card-border)",borderRadius:3,height:5,marginTop:3,overflow:"hidden"}}>
+                          <div style={{height:"100%",borderRadius:3,background:EU_SUB_COLORS[sub.region],opacity:.7,width:`${Math.min(r.total/(sub.reps[0]||{total:1}).total*100,100)}%`,transition:"width .8s"}}/>
+                        </div>
+                      </div>
+                      <div style={{textAlign:"right",flexShrink:0,minWidth:80}}>
+                        <div className="mono" style={{fontSize:13,fontWeight:700}}>{fmt(r.total,ccy)}</div>
+                        {r.gm!=null&&<div className="mono" style={{fontSize:9,color:r.gm>=50?"var(--green)":r.gm>=40?"var(--gold)":"var(--red)"}}>{r.gm}% GM</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+  };
+
+  // ═══════════════ CATEGORY VIEW ═══════════════
+  const CategoryView=()=>{
+    const isNA=regFilter==="NA";
+    const catData=isNA?data.d5:data.d7;
+    const visibleCats=catGroup==="catalog"?catalogCats:catGroup==="custom"?customCats:allCats;
+
+    // Overall GM% leaderboard (shown when catSort==="gm", before per-category cards)
+    const overallGMLeaderboard=useMemo(()=>{
+      const src=isNA?data.d4:data.d6;
+      return teamFilter([...src].filter(r=>r.gm!=null&&r.total>0)).sort((a,b)=>(b.gm||0)-(a.gm||0));
+    },[isNA,data.d4,data.d6,masterTeam]);
+
+    return(
+      <div>
+        {/* YTD-only notice */}
+        {timeframe!=="ytd"&&(
+          <div style={{background:"rgba(245,158,11,0.1)",border:"1px solid rgba(245,158,11,0.25)",borderRadius:8,padding:"10px 16px",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:14}}>⚠️</span>
+            <span style={{fontSize:11,color:"var(--gold)",fontWeight:600}}>Category breakdowns are YTD only — weekly/monthly category data is not available in the source data.</span>
+          </div>
+        )}
+
+        {/* Group toggle */}
+        <div style={{display:"flex",gap:6,marginBottom:12}}>
+          <TogBtn active={catGroup==="all"} onClick={()=>setCatGroup("all")}>All Categories</TogBtn>
+          <TogBtn active={catGroup==="catalog"} onClick={()=>setCatGroup("catalog")} color="#10b981">📦 Catalog</TogBtn>
+          <TogBtn active={catGroup==="custom"} onClick={()=>setCatGroup("custom")} color="#8b5cf6">🛠 Custom</TogBtn>
+        </div>
+
+        {/* Sort toggle */}
+        <div style={{display:"flex",gap:6,marginBottom:16}}>
+          <TogBtn active={catSort==="budget"} onClick={()=>setCatSort("budget")}>📊 % to Budget</TogBtn>
+          <TogBtn active={catSort==="revenue"} onClick={()=>setCatSort("revenue")}>💰 Revenue</TogBtn>
+          <TogBtn active={catSort==="gm"} onClick={()=>setCatSort("gm")}>📈 GM%</TogBtn>
+        </div>
+
+        {/* Category summary bar */}
+        <div className="card" style={{marginBottom:16}}>
+          <div className="card-head"><div className="card-title">{catGroup==="catalog"?"Catalog":catGroup==="custom"?"Custom":"All"} Category Summary</div>
+            <div className="card-sub">{isNA?"North America":"EU/ROW"}{catGroup==="catalog"?" • Stock & Standard Products":catGroup==="custom"?" • Made-to-Order Products":" • All Product Categories"} • YTD</div>
+          </div>
+          <div className="card-body">
+            {visibleCats.map((cat,idx)=>{
+              const cm=(data.category_mix||[]).find(c=>c.category===cat);
+              if(!cm)return null;
+              const catBud=isNA?Object.values(CAT_BUDGETS).reduce((s,c)=>s+(c[cat]||0),0):0;
+              const catPct=catBud>0?Math.round(cm.total/catBud*1000)/10:null;
+              return(
+                <div key={cat} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:idx<visibleCats.length-1?"1px solid var(--card-border)":"none"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,width:140,flexShrink:0}}>
+                    <div style={{width:10,height:10,borderRadius:5,background:catColors[cat]||"#64748b"}}/>
+                    <span style={{fontSize:13,fontWeight:700}}>{cat}</span>
+                  </div>
+                  <div style={{flex:1,background:"var(--card-border)",borderRadius:4,height:8,overflow:"hidden"}}>
+                    <div style={{height:"100%",borderRadius:4,background:catColors[cat]||"#64748b",width:`${Math.min(cm.total/((data.category_mix[0]||{total:1}).total)*100,100)}%`,transition:"width .8s"}}/>
+                  </div>
+                  <div className="mono" style={{fontSize:13,fontWeight:700,textAlign:"right",minWidth:80}}>{fmt(cm.total,ccy)}</div>
+                  {cm.gm!=null&&<div className="mono" style={{fontSize:12,fontWeight:800,color:gmColor(cm.gm),textAlign:"right",minWidth:55}}>{cm.gm}%</div>}
+                  {isNA&&catPct!=null&&<div style={{background:catPct>=50?"rgba(16,185,129,0.15)":catPct>=35?"rgba(245,158,11,0.15)":"rgba(239,68,68,0.15)",border:`1px solid ${pctCol(catPct)}33`,borderRadius:6,padding:"3px 8px",textAlign:"center",minWidth:55}}>
+                    <div className="mono" style={{fontSize:12,fontWeight:800,color:pctCol(catPct)}}>{catPct}%</div>
+                  </div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── OVERALL GM% LEADERBOARD (GM mode only) ── */}
+        {catSort==="gm"&&(
+          <div className="card" style={{marginBottom:16}}>
+            <div className="card-head"><div className="card-title">📈 Overall Gross Margin</div><div className="card-sub">{isNA?"NA":"EU"} reps ranked by overall GM% • {overallGMLeaderboard.length} reps</div></div>
+            <div className="card-body" style={{maxHeight:420,overflowY:"auto"}}>
+              <div style={{display:"grid",gridTemplateColumns:"36px 1fr 1fr 65px 90px 55px",gap:6,padding:"0 0 8px",borderBottom:"2px solid var(--card-border)"}}>
+                {["#","Rep","","GM%","Revenue","% Bud"].map((h,i)=>(
+                  <div key={h} style={{fontSize:9,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:1,textAlign:i>2?"right":"left",fontWeight:700}}>{h}</div>
+                ))}
+              </div>
+              {overallGMLeaderboard.map((r,i)=>{
+                const gm=r.gm||0;
+                return(
+                  <div key={r.rep} style={{display:"grid",gridTemplateColumns:"36px 1fr 1fr 65px 90px 55px",gap:6,padding:"8px 0",borderBottom:i<overallGMLeaderboard.length-1?"1px solid var(--card-border)":"none",alignItems:"center"}}>
+                    <div style={{width:24,height:24,borderRadius:12,background:i<3?medalCol(i):"var(--card-border)",color:i<3?"#000":"var(--text-dim)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800}}>{i+1}</div>
+                    <div style={{overflow:"hidden"}}>
+                      <div style={{fontSize:12,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.rep}</div>
+                      <div style={{fontSize:9,color:"var(--text-muted)",display:"flex",gap:4}}>
+                        {r.ca?<span style={{color:"var(--cyan)"}}>CA</span>:<span>US</span>}
+                        {isElite(r.rep)&&<span style={{color:"#a78bfa"}}>ELITE</span>}
+                      </div>
+                    </div>
+                    <div style={{background:"var(--card-border)",borderRadius:3,height:6,overflow:"hidden"}}>
+                      <div style={{height:"100%",borderRadius:3,background:gmColor(gm),opacity:.7,width:`${Math.min(gm,100)}%`,transition:"width .8s"}}/>
+                    </div>
+                    <div className="mono" style={{fontSize:15,fontWeight:800,color:gmColor(gm),textAlign:"right"}}>{gm}%</div>
+                    <div className="mono" style={{fontSize:11,textAlign:"right",color:"var(--text-dim)"}}>{fmt(r.total,ccy)}</div>
+                    <div className="mono" style={{fontSize:11,textAlign:"right",fontWeight:700,color:pctCol(r.pct)}}>{r.pct!=null?`${r.pct}%`:"N/A"}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {catSort==="gm"&&<div style={{fontSize:12,fontWeight:700,color:"var(--text-dim)",marginBottom:12,padding:"8px 0",borderBottom:"1px solid var(--card-border)"}}>By Category</div>}
+
+        {/* Per-category rep rankings */}
+        {visibleCats.map(cat=>{
+          let entries=teamFilter(catData[cat]||[]);
+          if(catSort==="budget"){
+            if(isNA) entries=[...entries].filter(e=>e.pct!=null).sort((a,b)=>b.pct-a.pct);
+            else entries=[...entries].sort((a,b)=>b.total-a.total);
+          } else if(catSort==="gm"){
+            entries=[...entries].filter(e=>repGM[e.rep]!=null).sort((a,b)=>(repGM[b.rep]||0)-(repGM[a.rep]||0));
+          } else {
+            entries=[...entries].sort((a,b)=>b.total-a.total);
+          }
+          if(entries.length===0)return null;
+          const catTotal=entries.reduce((s,e)=>s+e.total,0);
+          const catBud=isNA?Object.values(CAT_BUDGETS).reduce((s,c)=>s+(c[cat]||0),0):0;
+          const catPct=catBud>0?Math.round(catTotal/catBud*1000)/10:null;
+          const sortLabel=catSort==="budget"?"ranked by % to budget":catSort==="gm"?"ranked by GM%":"ranked by revenue";
+          return(
+            <div key={cat} className="card" style={{marginBottom:14}}>
+              <div className="card-head" style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 20px 10px"}}>
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{width:10,height:10,borderRadius:5,background:catColors[cat]}}/>
+                    <div className="card-title" style={{fontSize:15}}>{cat}</div>
+                    {customCats.includes(cat)&&<span style={{fontSize:9,background:"rgba(139,92,246,0.15)",color:"#a78bfa",padding:"2px 8px",borderRadius:4,fontWeight:700}}>CUSTOM</span>}
+                    {catalogCats.includes(cat)&&cat!=="Other"&&<span style={{fontSize:9,background:"rgba(16,185,129,0.15)",color:"#34d399",padding:"2px 8px",borderRadius:4,fontWeight:700}}>CATALOG</span>}
+                  </div>
+                  <div className="card-sub">{entries.length} reps • {sortLabel}</div>
+                </div>
+                <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:9,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:1}}>YTD</div>
+                    <div className="mono" style={{fontSize:14,fontWeight:700}}>{fmt(catTotal,ccy)}</div>
+                  </div>
+                  {isNA&&catBud>0&&<div style={{background:catPct>=50?"rgba(16,185,129,0.15)":catPct>=35?"rgba(245,158,11,0.15)":"rgba(239,68,68,0.15)",border:`1px solid ${pctCol(catPct)}33`,borderRadius:8,padding:"4px 10px",textAlign:"center"}}>
+                    <div className="mono" style={{fontSize:16,fontWeight:800,color:pctCol(catPct)}}>{catPct}%</div>
+                    <div style={{fontSize:8,color:"var(--text-muted)"}}>to budget</div>
+                  </div>}
+                </div>
+              </div>
+              <div className="card-body" style={{maxHeight:400,overflowY:"auto"}}>
+                {entries.map((e,i)=>(
+                  <CatRepRow key={e.rep} e={e} i={i} color={catColors[cat]} mode={catSort}/>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  return(
+    <div className="fade-up">
+      {/* ── TIMEFRAME TOGGLE ── */}
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{padding:"12px 18px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:timeframe!=="ytd"?12:0,flexWrap:"wrap"}}>
+            <div style={{fontSize:12,fontWeight:700,color:"var(--text)",flexShrink:0}}>📅 Timeframe:</div>
+            <div style={{display:"flex",gap:4}}>
+              <TogBtn active={timeframe==="ytd"} onClick={()=>setTimeframe("ytd")}>YTD</TogBtn>
+              <TogBtn active={timeframe==="week"} onClick={()=>setTimeframe("week")}>By Week</TogBtn>
+              <TogBtn active={timeframe==="month"} onClick={()=>setTimeframe("month")}>By Month</TogBtn>
+            </div>
+            {tfSummary&&<div style={{fontSize:11,color:"var(--text-dim)",flexShrink:0,marginLeft:"auto"}}>NA: <span className="mono" style={{color:"var(--blue)",fontWeight:700}}>{fmt(tfSummary.na,ccy)}</span> | EU: <span className="mono" style={{color:"var(--cyan)",fontWeight:700}}>{fmt(tfSummary.eu,ccy)}</span></div>}
+          </div>
+
+          {timeframe==="week"&&(
+            <div style={{display:"flex",gap:3,overflowX:"auto"}}>
+              {weeks.map(w=>(
+                <button key={w} onClick={()=>setSelWeek(w)} style={{padding:"5px 10px",borderRadius:6,background:selWeek===w?"var(--blue)":"transparent",border:selWeek===w?"none":"1px solid var(--card-border)",color:selWeek===w?"#fff":"var(--text-dim)",fontSize:10,fontWeight:600,whiteSpace:"nowrap",fontFamily:"'JetBrains Mono',monospace"}}>{w.replace(/^\d{4}-/,"")}</button>
+              ))}
+            </div>
+          )}
+
+          {timeframe==="month"&&(
+            <div style={{display:"flex",gap:3,overflowX:"auto"}}>
+              {months.slice(-12).map(m=>{
+                const lbl=new Date(m+"-15").toLocaleDateString("en-US",{month:"short",year:"2-digit"});
+                return <button key={m} onClick={()=>setSelMonth(m)} style={{padding:"5px 10px",borderRadius:6,background:selMonth===m?"var(--blue)":"transparent",border:selMonth===m?"none":"1px solid var(--card-border)",color:selMonth===m?"#fff":"var(--text-dim)",fontSize:10,fontWeight:600,whiteSpace:"nowrap",fontFamily:"'JetBrains Mono',monospace"}}>{lbl}</button>;
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── LEVEL 1: View selector ── */}
+      <div style={{display:"flex",gap:6,marginBottom:12}}>
+        <TogBtn active={view==="region"} onClick={()=>setView("region")}>🌎 Region</TogBtn>
+        <TogBtn active={view==="channel"} onClick={()=>setView("channel")}>🏪 Channel</TogBtn>
+        <TogBtn active={view==="category"} onClick={()=>setView("category")}>📦 Category</TogBtn>
+      </div>
+
+      {(view==="channel"||view==="category")&&(
+        <div style={{display:"flex",gap:4,marginBottom:16}}>
+          <TogBtn active={regFilter==="NA"} onClick={()=>setRegFilter("NA")}>🇨🇦🇺🇸 NA</TogBtn>
+          <TogBtn active={regFilter==="EU"} onClick={()=>setRegFilter("EU")}>🇪🇺 EU / ROW</TogBtn>
+        </div>
+      )}
+
+      {view==="region"&&<RegionView/>}
+      {view==="channel"&&<ChannelView/>}
+      {view==="category"&&<CategoryView/>}
+    </div>
+  );
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   MAIN APP
+   ══════════════════════════════════════════════════════════════════ */
+function App() {
+  const[tab,setTab]=useState("score");
+  const[ccy,setCcy]=useState("USD");
+  const[data,setData]=useState(DEFAULT_DATA);
+  const[masterTeam,setMasterTeam]=useState("all");
+  const[weeklyOrders,setWeeklyOrders]=useState(DEFAULT_WEEKLY);
+
+  return(
+    <div style={{minHeight:"100vh"}}>
+      {/* HEADER */}
+      <div style={{background:"linear-gradient(180deg,#0c1222 0%,var(--bg) 100%)",borderBottom:"1px solid var(--card-border)",padding:"0 20px"}}>
+        <div style={{maxWidth:1020,margin:"0 auto",padding:"14px 0 0"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{fontSize:24}}>🏒</div>
+              <div>
+                <div style={{fontSize:10,color:"var(--blue)",textTransform:"uppercase",letterSpacing:3,fontWeight:700}}>True Sports</div>
+                <div style={{fontSize:20,fontWeight:800,letterSpacing:-.5}}>Performance Dashboard</div>
+              </div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:14}}>
+              {/* MASTER TEAM TOGGLE */}
+              <div style={{display:"inline-flex",background:"var(--card)",borderRadius:8,padding:2,border:"1px solid var(--card-border)"}}>
+                <button onClick={()=>setMasterTeam("all")} style={{padding:"5px 14px",borderRadius:6,background:masterTeam==="all"?"var(--blue)":"transparent",color:masterTeam==="all"?"#fff":"var(--text-dim)",fontSize:11,fontWeight:700}}>🏒 All TRUE</button>
+                <button onClick={()=>setMasterTeam("retail")} style={{padding:"5px 14px",borderRadius:6,background:masterTeam==="retail"?"#10b981":"transparent",color:masterTeam==="retail"?"#fff":"var(--text-dim)",fontSize:11,fontWeight:700}}>🏪 Retail</button>
+                <button onClick={()=>setMasterTeam("elite")} style={{padding:"5px 14px",borderRadius:6,background:masterTeam==="elite"?"#8b5cf6":"transparent",color:masterTeam==="elite"?"#fff":"var(--text-dim)",fontSize:11,fontWeight:700}}>⭐ Elite</button>
+              </div>
+              <div style={{display:"inline-flex",background:"var(--card)",borderRadius:8,padding:2,border:"1px solid var(--card-border)"}}>
+                {["USD","CAD"].map(c=><button key={c} onClick={()=>setCcy(c)} style={{padding:"5px 16px",borderRadius:6,background:ccy===c?"var(--blue)":"transparent",color:ccy===c?"#fff":"var(--text-dim)",fontSize:12,fontWeight:700}}>{c}</button>)}
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:9,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:1}}>Data as of</div>
+                <div className="mono" style={{fontSize:13,fontWeight:600}}>{data.as_of_date}</div>
+              </div>
+            </div>
+          </div>
+          {masterTeam!=="all"&&<div style={{background:masterTeam==="retail"?"rgba(16,185,129,0.1)":"rgba(139,92,246,0.1)",border:`1px solid ${masterTeam==="retail"?"rgba(16,185,129,0.25)":"rgba(139,92,246,0.25)"}`,borderRadius:6,padding:"6px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:11}}>{masterTeam==="retail"?"🏪":"⭐"}</span>
+            <span style={{fontSize:11,color:masterTeam==="retail"?"#34d399":"#a78bfa",fontWeight:600}}>{masterTeam==="retail"?"Retail View — Elite/Pro reps excluded from all rankings and leaderboards":"Elite View — Retail reps excluded, showing Elite/Pro business only"}</span>
+          </div>}
+          <div style={{display:"flex",gap:2}}>
+            {TABS.map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"10px 18px",background:tab===t.id?"var(--bg)":"transparent",color:tab===t.id?"var(--text)":"var(--text-muted)",borderRadius:"10px 10px 0 0",fontSize:12,fontWeight:tab===t.id?700:500,transition:"all .15s",display:"flex",alignItems:"center",gap:6,border:tab===t.id?"1px solid var(--card-border)":"1px solid transparent",borderBottom:tab===t.id?"1px solid var(--bg)":"none"}}>
+                <span>{t.icon}</span>{t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* CONTENT */}
+      <div style={{maxWidth:1020,margin:"0 auto",padding:"20px 20px 48px"}}>
+        <UploadBar onUpload={setData} asOf={data.as_of_date}/>
+        <WeeklyUploadBar onUpload={setWeeklyOrders} weekLabel={weeklyOrders.week_label}/>
+        {tab==="score"&&<Scoreboard data={data} ccy={ccy} masterTeam={masterTeam} weeklyOrders={weeklyOrders}/>}
+        {tab==="leader"&&<Leaderboards data={data} ccy={ccy} masterTeam={masterTeam} weeklyOrders={weeklyOrders}/>}
+        {tab==="horse"&&<WorkHorse/>}
+        {tab==="deep"&&<DeepDive data={data} ccy={ccy} masterTeam={masterTeam}/>}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
